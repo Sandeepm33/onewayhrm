@@ -77,70 +77,72 @@ export default function AssetsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs text-indigo-400 font-semibold uppercase tracking-wider">IT & Infrastructure</span>
-            <span className="text-slate-500">•</span>
-            <span className="text-xs text-slate-400">{assets.length} Inventory Items</span>
+            <span className="text-[11px] font-bold tracking-wider uppercase text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md border border-orange-200/60">
+              IT & Infrastructure
+            </span>
+            <span className="text-slate-300">•</span>
+            <span className="text-xs font-medium text-slate-500">{assets.length} Inventory Items</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+          <h1 className="text-2xl font-black tracking-tight text-slate-900 flex items-center gap-2">
             Asset Inventory & Allocations
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-slate-500 mt-1">
             Laptops, monitors, serial numbers, employee custody, and exit clearance verification
           </p>
         </div>
 
         <button
           onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold text-xs shadow-lg shadow-indigo-600/30 transition-all"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-all cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>Add Asset to Register</span>
         </button>
       </div>
 
-      <div className="rounded-2xl bg-slate-900/90 border border-slate-800 overflow-hidden shadow-sm">
+      <div className="rounded-2xl bg-white border border-slate-200/90 overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="border-b border-slate-800 bg-slate-950/60 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
-                <th className="py-3 px-4">Asset Code</th>
-                <th className="py-3 px-4">Asset Name</th>
-                <th className="py-3 px-4">Category</th>
-                <th className="py-3 px-4">Serial Number</th>
-                <th className="py-3 px-4">Current Custody</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4 text-right">Actions</th>
+              <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
+                <th className="py-3.5 px-4">Asset Code</th>
+                <th className="py-3.5 px-4">Asset Name</th>
+                <th className="py-3.5 px-4">Category</th>
+                <th className="py-3.5 px-4">Serial Number</th>
+                <th className="py-3.5 px-4">Current Custody</th>
+                <th className="py-3.5 px-4">Status</th>
+                <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60">
+            <tbody className="divide-y divide-slate-100">
               {assets.map((ast) => (
-                <tr key={ast._id} className="hover:bg-slate-800/40 transition-colors">
-                  <td className="py-3.5 px-4 font-mono font-medium text-indigo-400">{ast.assetCode}</td>
-                  <td className="py-3.5 px-4 font-semibold text-white">{ast.name}</td>
-                  <td className="py-3.5 px-4 text-slate-300 font-medium">{ast.category}</td>
-                  <td className="py-3.5 px-4 font-mono text-slate-400">{ast.serialNumber || 'N/A'}</td>
+                <tr key={ast._id} className="hover:bg-slate-50/70 transition-colors">
+                  <td className="py-3.5 px-4 font-mono font-bold text-orange-600">{ast.assetCode}</td>
+                  <td className="py-3.5 px-4 font-bold text-slate-900">{ast.name}</td>
+                  <td className="py-3.5 px-4 text-slate-700 font-medium">{ast.category}</td>
+                  <td className="py-3.5 px-4 font-mono text-slate-500 font-medium">{ast.serialNumber || 'N/A'}</td>
                   <td className="py-3.5 px-4">
                     {ast.assignedToEmployeeId ? (
                       <div>
-                        <div className="font-semibold text-white">
+                        <div className="font-bold text-slate-900">
                           {ast.assignedToEmployeeId.firstName} {ast.assignedToEmployeeId.lastName}
                         </div>
-                        <div className="text-[10px] text-slate-500 font-mono">
+                        <div className="text-[10px] text-slate-400 font-mono font-medium">
                           {ast.assignedToEmployeeId.employeeCode}
                         </div>
                       </div>
                     ) : (
-                      <span className="text-slate-500 italic">Unassigned (Inventory)</span>
+                      <span className="text-slate-400 italic font-medium">Unassigned (Inventory)</span>
                     )}
                   </td>
                   <td className="py-3.5 px-4">
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                         ast.status === 'ASSIGNED'
-                          ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
                           : ast.status === 'AVAILABLE'
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                          : 'bg-slate-800 text-slate-400'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-slate-100 text-slate-700 border border-slate-200'
                       }`}
                     >
                       {ast.status}
@@ -150,7 +152,7 @@ export default function AssetsPage() {
                     {ast.status === 'ASSIGNED' && (
                       <button
                         onClick={() => handleReturn(ast._id)}
-                        className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold"
+                        className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-colors"
                       >
                         Return Asset
                       </button>
@@ -160,7 +162,7 @@ export default function AssetsPage() {
               ))}
               {assets.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500">
+                  <td colSpan={7} className="py-12 text-center text-slate-400 font-medium">
                     No equipment registered in the inventory yet.
                   </td>
                 </tr>
@@ -171,31 +173,31 @@ export default function AssetsPage() {
       </div>
 
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-6 relative">
-            <button onClick={() => setModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-white border border-slate-200 rounded-3xl shadow-2xl p-6 relative">
+            <button onClick={() => setModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 cursor-pointer">
               <X className="w-5 h-5" />
             </button>
-            <h2 className="text-base font-bold text-white mb-3">Add Asset to Register</h2>
+            <h2 className="text-base font-black text-slate-900 mb-3">Add Asset to Register</h2>
             <form onSubmit={handleSubmit} className="space-y-3">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Asset Name *</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Asset Name *</label>
                 <input
                   type="text"
                   required
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   placeholder="e.g. Dell Latitude 7440 Core i7"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium focus:bg-white focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Category</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
                   <select
                     value={form.category}
                     onChange={(e) => setForm({ ...form, category: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium focus:bg-white focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 cursor-pointer"
                   >
                     <option value="LAPTOP">Laptop</option>
                     <option value="MONITOR">Monitor</option>
@@ -205,36 +207,36 @@ export default function AssetsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Serial Number</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Serial Number</label>
                   <input
                     type="text"
                     value={form.serialNumber}
                     onChange={(e) => setForm({ ...form, serialNumber: e.target.value })}
                     placeholder="CN-098765-ABC"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium focus:bg-white focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Purchase Cost (INR)</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Purchase Cost (INR)</label>
                 <input
                   type="number"
                   value={form.purchaseCost}
                   onChange={(e) => setForm({ ...form, purchaseCost: Number(e.target.value) })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium focus:bg-white focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                 />
               </div>
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white text-xs font-bold shadow-md shadow-orange-500/20 cursor-pointer transition-all"
                 >
                   Save Asset
                 </button>
