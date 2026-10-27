@@ -22,11 +22,17 @@ export interface IEmployee extends Document {
   branchId?: mongoose.Types.ObjectId;
   departmentId?: mongoose.Types.ObjectId;
   designationId?: mongoose.Types.ObjectId;
-  reportingManagerId?: mongoose.Types.ObjectId;
+  roleId?: mongoose.Types.ObjectId; // Assigned organization role
+  reportingManagerId?: mongoose.Types.ObjectId; // HR Reporting Manager
+  technicalLeadId?: mongoose.Types.ObjectId; // Team Lead / Technical Lead
+  projectManagerId?: mongoose.Types.ObjectId; // Project Manager
+  resourceManagerId?: mongoose.Types.ObjectId; // Resource Manager
+  costCenter?: string;
 
   // Compensation overview
   ctcAnnual: number;
   grossMonthly: number;
+  fullyLoadedMonthlyCost?: number; // Fully loaded employment cost for project & dept budgeting
   basicSalary: number;
   hra: number;
   specialAllowance: number;
@@ -100,10 +106,16 @@ const EmployeeSchema = new Schema<IEmployee>(
     branchId: { type: Schema.Types.ObjectId, ref: 'Branch' },
     departmentId: { type: Schema.Types.ObjectId, ref: 'Department' },
     designationId: { type: Schema.Types.ObjectId, ref: 'Designation' },
+    roleId: { type: Schema.Types.ObjectId, ref: 'Role' },
     reportingManagerId: { type: Schema.Types.ObjectId, ref: 'Employee' },
+    technicalLeadId: { type: Schema.Types.ObjectId, ref: 'Employee' },
+    projectManagerId: { type: Schema.Types.ObjectId, ref: 'Employee' },
+    resourceManagerId: { type: Schema.Types.ObjectId, ref: 'Employee' },
+    costCenter: { type: String, default: '' },
 
     ctcAnnual: { type: Number, default: 600000 },
     grossMonthly: { type: Number, default: 50000 },
+    fullyLoadedMonthlyCost: { type: Number, default: 62500 },
     basicSalary: { type: Number, default: 25000 },
     hra: { type: Number, default: 12500 },
     specialAllowance: { type: Number, default: 10900 },

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { Employee } from '@/models/Employee';
+import { User } from '@/models/User';
+import { Role } from '@/models/Role';
 import { Attendance } from '@/models/Attendance';
 import { LeaveBalance, LeaveRequest } from '@/models/Leave';
 import { Payslip } from '@/models/Payroll';
@@ -20,7 +22,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       .populate('branchId')
       .populate('departmentId')
       .populate('designationId')
-      .populate('reportingManagerId');
+      .populate('roleId')
+      .populate('reportingManagerId', 'firstName lastName employeeCode email')
+      .populate('technicalLeadId', 'firstName lastName employeeCode email')
+      .populate('projectManagerId', 'firstName lastName employeeCode email')
+      .populate('resourceManagerId', 'firstName lastName employeeCode email');
 
     if (!employee) {
       return NextResponse.json({ success: false, error: 'Employee not found' }, { status: 404 });
@@ -61,6 +67,23 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params;
     const updates = await req.json();
 
+    // Sanitize ObjectId reference fields so empty strings don't fail Mongoose BSON casting
+    const objectIdFields = [
+      'reportingManagerId',
+      'technicalLeadId',
+      'projectManagerId',
+      'resourceManagerId',
+      'departmentId',
+      'designationId',
+      'branchId',
+      'roleId',
+    ];
+    for (const field of objectIdFields) {
+      if (field in updates && (updates[field] === '' || updates[field] === undefined)) {
+        updates[field] = null;
+      }
+    }
+
     // If CTC is changed, recalculate breakdown
     if (updates.ctcAnnual) {
       const annual = Number(updates.ctcAnnual);
@@ -85,6 +108,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     if (!employee) {
       return NextResponse.json({ success: false, error: 'Employee not found' }, { status: 404 });
+    }
+
+    // If roleId was updated, also update User's role and roleId
+    if (updates.roleId && employee.userId) {
+      const assignedRole = await Role.findById(updates.roleId);
+      if (assignedRole) {
+        await User.findByIdAndUpdate(employee.userId, {
+          roleId: assignedRole._id,
+          role: assignedRole.name,
+        });
+      }
     }
 
     // Audit log

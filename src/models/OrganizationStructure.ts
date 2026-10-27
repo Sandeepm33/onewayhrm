@@ -36,6 +36,8 @@ export interface IDepartment extends Document {
   organizationId: mongoose.Types.ObjectId;
   name: string;
   code: string;
+  parentDepartmentId?: mongoose.Types.ObjectId; // For subdepartments
+  costCenterCode?: string;
   headEmployeeId?: mongoose.Types.ObjectId;
   description?: string;
   createdAt: Date;
@@ -47,6 +49,8 @@ const DepartmentSchema = new Schema<IDepartment>(
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
     name: { type: String, required: true, trim: true },
     code: { type: String, required: true, uppercase: true, trim: true },
+    parentDepartmentId: { type: Schema.Types.ObjectId, ref: 'Department' },
+    costCenterCode: { type: String, default: '' },
     headEmployeeId: { type: Schema.Types.ObjectId, ref: 'Employee' },
     description: { type: String, default: '' },
   },

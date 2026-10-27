@@ -3,6 +3,8 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { LeaveRequest, LeaveBalance } from '@/models/Leave';
 import { AuditLog } from '@/models/Operations';
+import { ApprovalRequest } from '@/models/ApprovalWorkflow';
+import { Employee } from '@/models/Employee';
 
 export async function GET(req: NextRequest) {
   try {
@@ -101,6 +103,70 @@ export async function POST(req: NextRequest) {
       status: 'PENDING',
     });
 
+    // Create corresponding ApprovalRequest routed through the employee's hierarchy
+    try {
+      const requester = await Employee.findById(targetEmployeeId)
+        .populate('reportingManagerId', 'firstName lastName employeeCode email')
+        .populate('technicalLeadId', 'firstName lastName employeeCode email');
+
+      if (requester) {
+        const hasTL = !!requester.technicalLeadId;
+        const hasManager = !!requester.reportingManagerId;
+
+        let totalSteps = 1;
+        let firstPendingRole = 'HR Administration';
+        let firstApproverIds: any[] = [];
+
+        if (hasTL && hasManager) {
+          // Tiered: Step 1 TL -> Step 2 Manager
+          totalSteps = 2;
+          firstPendingRole = `Technical Lead (${(requester.technicalLeadId as any).firstName} ${(requester.technicalLeadId as any).lastName})`;
+          firstApproverIds = [(requester.technicalLeadId as any)._id];
+        } else if (hasManager) {
+          // Direct to Manager (e.g. TL or employee without a TL)
+          totalSteps = 1;
+          firstPendingRole = `Reporting Manager (${(requester.reportingManagerId as any).firstName} ${(requester.reportingManagerId as any).lastName})`;
+          firstApproverIds = [(requester.reportingManagerId as any)._id];
+        } else {
+          // Top-level executive
+          totalSteps = 1;
+          firstPendingRole = 'Organization Executive / Admin';
+        }
+
+        const reqNum = `REQ-LV-${Date.now().toString().slice(-4)}`;
+        await ApprovalRequest.create({
+          organizationId: session.organizationId,
+          module: 'LEAVE',
+          entityId: String(newRequest._id),
+          requestNumber: reqNum,
+          requesterEmployeeId: requester._id,
+          title: `${leaveType} Leave (${days} Day${days > 1 ? 's' : ''}) - ${requester.firstName} ${requester.lastName}`,
+          summary: `${new Date(startDate).toLocaleDateString()} to ${new Date(endDate).toLocaleDateString()} • ${reason}`,
+          details: {
+            leaveType,
+            startDate,
+            endDate,
+            days,
+            reason,
+            hasTL,
+            hasManager,
+            managerId: hasManager ? (requester.reportingManagerId as any)._id : null,
+            managerName: hasManager ? `${(requester.reportingManagerId as any).firstName} ${(requester.reportingManagerId as any).lastName}` : null,
+            technicalLeadId: hasTL ? (requester.technicalLeadId as any)._id : null,
+            technicalLeadName: hasTL ? `${(requester.technicalLeadId as any).firstName} ${(requester.technicalLeadId as any).lastName}` : null,
+          },
+          currentStepIndex: 0,
+          totalSteps,
+          currentPendingRole: firstPendingRole,
+          currentPendingApproverIds: firstApproverIds,
+          status: 'PENDING',
+          stepHistory: [],
+        });
+      }
+    } catch (wfErr) {
+      console.error('Error generating approval request for leave:', wfErr);
+    }
+
     return NextResponse.json({
       success: true,
       message: 'Leave application submitted successfully',
@@ -162,6 +228,25 @@ export async function PUT(req: NextRequest) {
         if (leave.leaveType === 'UNPAID') balance.unpaidLeave.used += leave.totalDays;
         await balance.save();
       }
+    }
+
+    // Synchronize linked ApprovalRequest if one exists
+    try {
+      const appReq = await ApprovalRequest.findOne({ entityId: String(leave._id), module: 'LEAVE' });
+      if (appReq && appReq.status === 'PENDING') {
+        appReq.status = status as any;
+        appReq.stepHistory.push({
+          stepNumber: appReq.currentStepIndex + 1,
+          stepName: `Direct Resolution (${session.role})`,
+          approverName: session.name,
+          action: status === 'APPROVED' ? 'APPROVED' : 'REJECTED',
+          comments: reviewerRemarks || `Resolved directly via Leave Management`,
+          actedAt: new Date(),
+        });
+        await appReq.save();
+      }
+    } catch (syncErr) {
+      console.error('Error synchronizing ApprovalRequest from leave route:', syncErr);
     }
 
     await AuditLog.create({

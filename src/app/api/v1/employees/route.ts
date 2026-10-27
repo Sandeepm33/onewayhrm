@@ -3,8 +3,10 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest, hashPassword } from '@/lib/auth';
 import { Employee } from '@/models/Employee';
 import { User } from '@/models/User';
+import { Role } from '@/models/Role';
 import { LeaveBalance } from '@/models/Leave';
 import { AuditLog } from '@/models/Operations';
+import { ReportingRelationship } from '@/models/Workforce';
 
 export async function GET(req: NextRequest) {
   try {
@@ -39,7 +41,11 @@ export async function GET(req: NextRequest) {
       .populate('branchId', 'name code city')
       .populate('departmentId', 'name code')
       .populate('designationId', 'title code grade')
-      .populate('reportingManagerId', 'firstName lastName employeeCode')
+      .populate('roleId', 'name slug isSystemAdmin')
+      .populate('reportingManagerId', 'firstName lastName employeeCode email')
+      .populate('technicalLeadId', 'firstName lastName employeeCode email')
+      .populate('projectManagerId', 'firstName lastName employeeCode email')
+      .populate('resourceManagerId', 'firstName lastName employeeCode email')
       .sort({ createdAt: -1 });
 
     return NextResponse.json({ success: true, employees });
@@ -69,7 +75,13 @@ export async function POST(req: NextRequest) {
       departmentId,
       branchId,
       designationId,
+      roleId,
       reportingManagerId,
+      technicalLeadId,
+      projectManagerId,
+      resourceManagerId,
+      costCenter,
+      fullyLoadedMonthlyCost,
       ctcAnnual,
       panNumber,
       aadhaarNumber,
@@ -112,6 +124,13 @@ export async function POST(req: NextRequest) {
     const hra = Math.round(basicSalary * 0.5); // 50% of Basic
     const conveyanceAllowance = 1600;
     const specialAllowance = Math.max(0, grossMonthly - basicSalary - hra - conveyanceAllowance);
+    const fullyLoadedCost = fullyLoadedMonthlyCost ? Number(fullyLoadedMonthlyCost) : Math.round(grossMonthly * 1.25);
+
+    // Verify assigned role if provided
+    let roleDoc = null;
+    if (roleId) {
+      roleDoc = await Role.findOne({ _id: roleId, organizationId: session.organizationId });
+    }
 
     const newEmployee = await Employee.create({
       organizationId: session.organizationId,
@@ -127,9 +146,15 @@ export async function POST(req: NextRequest) {
       branchId: branchId || undefined,
       departmentId: departmentId || undefined,
       designationId: designationId || undefined,
+      roleId: roleDoc ? roleDoc._id : undefined,
       reportingManagerId: reportingManagerId || undefined,
+      technicalLeadId: technicalLeadId || undefined,
+      projectManagerId: projectManagerId || undefined,
+      resourceManagerId: resourceManagerId || undefined,
+      costCenter: costCenter || '',
       ctcAnnual: annual,
       grossMonthly,
+      fullyLoadedMonthlyCost: fullyLoadedCost,
       basicSalary,
       hra,
       specialAllowance,
@@ -149,11 +174,35 @@ export async function POST(req: NextRequest) {
         name: `${firstName} ${lastName}`,
         email: email.toLowerCase().trim(),
         passwordHash: pwdHash,
-        role: 'EMPLOYEE',
+        role: roleDoc ? roleDoc.name : 'EMPLOYEE',
+        roleId: roleDoc ? roleDoc._id : undefined,
         isActive: true,
       });
       newEmployee.userId = newUser._id;
       await newEmployee.save();
+    }
+
+    // Record initial reporting relationships for audit trail
+    if (reportingManagerId) {
+      await ReportingRelationship.create({
+        organizationId: session.organizationId,
+        employeeId: newEmployee._id,
+        managerEmployeeId: reportingManagerId,
+        relationshipType: 'HR_REPORTING_MANAGER',
+        effectiveStartDate: new Date(joiningDate),
+        isPrimary: true,
+      });
+    }
+
+    if (technicalLeadId) {
+      await ReportingRelationship.create({
+        organizationId: session.organizationId,
+        employeeId: newEmployee._id,
+        managerEmployeeId: technicalLeadId,
+        relationshipType: 'TECHNICAL_LEAD',
+        effectiveStartDate: new Date(joiningDate),
+        isPrimary: false,
+      });
     }
 
     // Initialize leave balance for current year

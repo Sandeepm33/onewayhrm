@@ -32,6 +32,11 @@ import {
   Shield,
   PlusCircle,
   ChevronRight,
+  Network,
+  Layers,
+  PieChart,
+  CheckSquare,
+  Users2,
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, any> = {
@@ -51,6 +56,13 @@ const ICON_MAP: Record<string, any> = {
   Settings,
   ShieldCheck,
   Briefcase,
+  Building2,
+  Users2,
+  Shield,
+  Network,
+  Layers,
+  PieChart,
+  CheckSquare,
 };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
