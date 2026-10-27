@@ -121,14 +121,14 @@ export default function OneWayHRLandingPage() {
   return (
     <div className="min-h-screen bg-white text-slate-900 font-sans selection:bg-orange-500 selection:text-white">
       {/* TOP ANNOUNCEMENT BAR (HROne Signature Style) */}
-      <div className="bg-slate-950 text-white text-xs py-2.5 px-4 text-center font-medium flex items-center justify-center gap-2">
-        <span className="px-2 py-0.5 rounded bg-orange-600 text-white text-[10px] font-bold uppercase tracking-wider">
+      <div className="bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 text-white text-xs py-2.5 px-4 text-center font-bold flex items-center justify-center gap-2 shadow-xs">
+        <span className="px-2 py-0.5 rounded-md bg-white/20 text-white text-[10px] font-black uppercase tracking-wider backdrop-blur-xs">
           New Release
         </span>
         <span>OneWayHR India 2026 Edition: Automated Form 16, New Tax Regime (115BAC) & Geofenced Clock-In</span>
         <button
           onClick={() => setDemoModalOpen(true)}
-          className="text-orange-400 font-bold hover:underline inline-flex items-center gap-1 ml-1"
+          className="text-white underline font-extrabold hover:text-orange-100 inline-flex items-center gap-1 ml-1 cursor-pointer"
         >
           <span>Explore Live</span>
           <ArrowRight className="w-3 h-3" />
@@ -561,98 +561,98 @@ export default function OneWayHRLandingPage() {
         </div>
       </section>
 
-      {/* STATUTORY INDIA COMPLIANCE (HROne Signature Green Block) */}
-      <section id="compliance" className="py-20 bg-slate-950 text-white">
+      {/* STATUTORY INDIA COMPLIANCE (HROne Signature Green & Clean Block) */}
+      <section id="compliance" className="py-24 bg-gradient-to-b from-[#f8fafc] to-white border-y border-slate-200/80 text-slate-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div>
-              <span className="text-xs uppercase font-extrabold tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
+              <span className="text-xs uppercase font-extrabold tracking-widest text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
                 100% India Compliant
               </span>
-              <h2 className="text-3xl sm:text-5xl font-black text-white mt-4 tracking-tight leading-tight">
+              <h2 className="text-3xl sm:text-5xl font-black text-slate-950 mt-4 tracking-tight leading-tight">
                 Built For India. Never Risk an EPFO or Tax Audit Penalty.
               </h2>
-              <p className="text-slate-400 text-base mt-4 leading-relaxed">
+              <p className="text-slate-600 text-base mt-4 leading-relaxed font-medium">
                 Indian labor laws and tax codes are intricate and unforgiving. OneWayHR automatically executes all statutory deductions with pinpoint accuracy.
               </p>
 
               <div className="mt-8 space-y-4 text-sm">
                 <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5 font-bold">
+                  <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5 font-bold">
                     ✓
                   </div>
                   <div>
-                    <h4 className="font-bold text-white">EPF Act 1952 (12% Statutory Ceiling)</h4>
-                    <p className="text-xs text-slate-400">Automates 12% employee share and 12% employer split (8.33% EPS + 3.67% EPF) with ₹15,000 threshold capping.</p>
+                    <h4 className="font-bold text-slate-900">EPF Act 1952 (12% Statutory Ceiling)</h4>
+                    <p className="text-xs text-slate-500 font-medium">Automates 12% employee share and 12% employer split (8.33% EPS + 3.67% EPF) with ₹15,000 threshold capping.</p>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5 font-bold">
+                  <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5 font-bold">
                     ✓
                   </div>
                   <div>
-                    <h4 className="font-bold text-white">ESI Act 1948 (0.75% / 3.25%)</h4>
-                    <p className="text-xs text-slate-400">Automatic gross salary cutoff at ₹21,000 per month. Generates monthly contribution challans.</p>
+                    <h4 className="font-bold text-slate-900">ESI Act 1948 (0.75% / 3.25%)</h4>
+                    <p className="text-xs text-slate-500 font-medium">Automatic gross salary cutoff at ₹21,000 per month. Generates monthly contribution challans.</p>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5 font-bold">
+                  <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5 font-bold">
                     ✓
                   </div>
                   <div>
-                    <h4 className="font-bold text-white">Professional Tax (PT) for All 28 States</h4>
-                    <p className="text-xs text-slate-400">Karnataka, Maharashtra, Telangana, West Bengal, and Tamil Nadu slab rules built right into payroll.</p>
+                    <h4 className="font-bold text-slate-900">Professional Tax (PT) for All 28 States</h4>
+                    <p className="text-xs text-slate-500 font-medium">Karnataka, Maharashtra, Telangana, West Bengal, and Tamil Nadu slab rules built right into payroll.</p>
                   </div>
                 </div>
 
                 <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5 font-bold">
+                  <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5 font-bold">
                     ✓
                   </div>
                   <div>
-                    <h4 className="font-bold text-white">Section 192 TDS & New Regime (115BAC)</h4>
-                    <p className="text-xs text-slate-400">Employees toggle between Old vs New tax regimes; Section 80C, 80D, standard ₹75,000 deduction auto-computed.</p>
+                    <h4 className="font-bold text-slate-900">Section 192 TDS & New Regime (115BAC)</h4>
+                    <p className="text-xs text-slate-500 font-medium">Employees toggle between Old vs New tax regimes; Section 80C, 80D, standard ₹75,000 deduction auto-computed.</p>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Compliance Stats Dashboard */}
-            <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl space-y-6">
-              <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-                <span className="text-sm font-bold text-slate-300">Statutory Health Monitor</span>
-                <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+            <div className="bg-white border border-slate-200/90 p-8 rounded-3xl shadow-xl space-y-6">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                <span className="text-sm font-black text-slate-900">Statutory Health Monitor</span>
+                <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                   100% AUDIT READY
                 </span>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800">
-                  <span className="text-xs text-slate-400">EPFO Monthly Filing</span>
-                  <p className="text-xl font-bold text-emerald-400 mt-1">Ready in ECR</p>
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
+                  <span className="text-xs font-medium text-slate-500">EPFO Monthly Filing</span>
+                  <p className="text-xl font-bold text-emerald-600 mt-1">Ready in ECR</p>
                 </div>
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800">
-                  <span className="text-xs text-slate-400">ESIC Challan</span>
-                  <p className="text-xl font-bold text-emerald-400 mt-1">Verified</p>
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
+                  <span className="text-xs font-medium text-slate-500">ESIC Challan</span>
+                  <p className="text-xl font-bold text-emerald-600 mt-1">Verified</p>
                 </div>
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800">
-                  <span className="text-xs text-slate-400">Quarterly Form 24Q</span>
-                  <p className="text-xl font-bold text-indigo-400 mt-1">Auto-Export</p>
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
+                  <span className="text-xs font-medium text-slate-500">Quarterly Form 24Q</span>
+                  <p className="text-xl font-bold text-orange-600 mt-1">Auto-Export</p>
                 </div>
-                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800">
-                  <span className="text-xs text-slate-400">Audit Trail Logs</span>
-                  <p className="text-xl font-bold text-white mt-1">Immutable</p>
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
+                  <span className="text-xs font-medium text-slate-500">Audit Trail Logs</span>
+                  <p className="text-xl font-bold text-slate-900 mt-1">Immutable</p>
                 </div>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-bold text-white">Form 16 Part A & B Generator</p>
-                  <p className="text-[11px] text-slate-400">Annual digitally signed TDS certificates</p>
+                  <p className="text-xs font-bold text-slate-900">Form 16 Part A & B Generator</p>
+                  <p className="text-[11px] text-slate-500 font-medium">Annual digitally signed TDS certificates</p>
                 </div>
-                <span className="text-xs font-bold text-orange-400">Automated</span>
+                <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-200/60">Automated</span>
               </div>
             </div>
           </div>
