@@ -33,6 +33,7 @@ export default function LeavePage() {
     isHalfDay: false,
     reason: '',
   });
+  const [holidays, setHolidays] = useState<any[]>([]);
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -41,15 +42,18 @@ export default function LeavePage() {
 
   const fetchData = async () => {
     try {
-      const [resReq, resBal] = await Promise.all([
+      const [resReq, resBal, resHol] = await Promise.all([
         fetch('/api/v1/leave'),
         fetch('/api/v1/leave/balances'),
+        fetch('/api/v1/holidays'),
       ]);
       const dataReq = await resReq.json();
       const dataBal = await resBal.json();
+      const dataHol = await resHol.json();
 
       if (dataReq.success) setRequests(dataReq.requests || []);
       if (dataBal.success) setBalance(dataBal.balance);
+      if (dataHol.success) setHolidays(dataHol.holidays || []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -107,15 +111,6 @@ export default function LeavePage() {
       console.error(e);
     }
   };
-
-  const holidays = [
-    { name: 'Republic Day', date: '26 Jan 2026', type: 'National' },
-    { name: 'Holi', date: '04 Mar 2026', type: 'Gazetted' },
-    { name: 'Independence Day', date: '15 Aug 2026', type: 'National' },
-    { name: 'Mahatma Gandhi Jayanti', date: '02 Oct 2026', type: 'National' },
-    { name: 'Diwali (Deepavali)', date: '08 Nov 2026', type: 'Festival' },
-    { name: 'Christmas', date: '25 Dec 2026', type: 'Gazetted' },
-  ];
 
   return (
     <DashboardLayout>
@@ -326,7 +321,9 @@ export default function LeavePage() {
             <div key={h.name} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-left">
               <span className="text-[10px] text-orange-600 font-bold uppercase tracking-wider">{h.type}</span>
               <p className="text-xs font-bold text-slate-900 mt-0.5">{h.name}</p>
-              <p className="text-[11px] text-slate-500 font-medium mt-1">{h.date}</p>
+              <p className="text-[11px] text-slate-500 font-medium mt-1">
+                {isNaN(new Date(h.date).getTime()) ? h.date : new Date(h.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </p>
             </div>
           ))}
         </div>

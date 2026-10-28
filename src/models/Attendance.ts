@@ -2,6 +2,17 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export type AttendanceStatus = 'PRESENT' | 'LATE' | 'HALF_DAY' | 'ABSENT' | 'ON_LEAVE' | 'HOLIDAY' | 'WEEK_OFF';
 export type WorkLocation = 'OFFICE' | 'REMOTE' | 'FIELD';
+export type DayClockStatus = 'NOT_CLOCKED_IN' | 'WORKING' | 'ON_BREAK' | 'CLOCKED_OUT';
+export type BreakType = 'TEA' | 'LUNCH' | 'SMOKE' | 'MEETING' | 'PERSONAL' | 'GENERAL';
+
+export interface IAttendanceBreak {
+  _id?: mongoose.Types.ObjectId;
+  startTime: Date;
+  endTime?: Date;
+  durationMinutes?: number;
+  type: BreakType;
+  notes?: string;
+}
 
 export interface IAttendance extends Document {
   organizationId: mongoose.Types.ObjectId;
@@ -9,7 +20,11 @@ export interface IAttendance extends Document {
   date: string; // YYYY-MM-DD
   checkIn?: Date;
   checkOut?: Date;
-  workHoursMinutes: number; // e.g. 480 mins = 8 hours
+  workHoursMinutes: number; // gross work minutes
+  breaks: IAttendanceBreak[];
+  totalBreakMinutes: number;
+  netWorkHoursMinutes: number; // workHoursMinutes - totalBreakMinutes
+  dayStatus: DayClockStatus;
   status: AttendanceStatus;
   workLocation: WorkLocation;
   checkInCoordinates?: {
@@ -35,6 +50,21 @@ export interface IAttendance extends Document {
   updatedAt: Date;
 }
 
+const BreakSchema = new Schema<IAttendanceBreak>(
+  {
+    startTime: { type: Date, required: true },
+    endTime: { type: Date },
+    durationMinutes: { type: Number, default: 0 },
+    type: {
+      type: String,
+      enum: ['TEA', 'LUNCH', 'SMOKE', 'MEETING', 'PERSONAL', 'GENERAL'],
+      default: 'GENERAL',
+    },
+    notes: { type: String },
+  },
+  { _id: true }
+);
+
 const AttendanceSchema = new Schema<IAttendance>(
   {
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
@@ -43,6 +73,14 @@ const AttendanceSchema = new Schema<IAttendance>(
     checkIn: { type: Date },
     checkOut: { type: Date },
     workHoursMinutes: { type: Number, default: 0 },
+    breaks: { type: [BreakSchema], default: [] },
+    totalBreakMinutes: { type: Number, default: 0 },
+    netWorkHoursMinutes: { type: Number, default: 0 },
+    dayStatus: {
+      type: String,
+      enum: ['NOT_CLOCKED_IN', 'WORKING', 'ON_BREAK', 'CLOCKED_OUT'],
+      default: 'NOT_CLOCKED_IN',
+    },
     status: {
       type: String,
       enum: ['PRESENT', 'LATE', 'HALF_DAY', 'ABSENT', 'ON_LEAVE', 'HOLIDAY', 'WEEK_OFF'],
@@ -80,7 +118,8 @@ const AttendanceSchema = new Schema<IAttendance>(
   { timestamps: true }
 );
 
-AttendanceSchema.index({ organizationId: 1, employeeId: 1, date: 1 }, { unique: true });
+if (mongoose.models && mongoose.models.Attendance) {
+  delete mongoose.models.Attendance;
+}
 
-export const Attendance: Model<IAttendance> =
-  mongoose.models.Attendance || mongoose.model<IAttendance>('Attendance', AttendanceSchema);
+export const Attendance: Model<IAttendance> = mongoose.model<IAttendance>('Attendance', AttendanceSchema);

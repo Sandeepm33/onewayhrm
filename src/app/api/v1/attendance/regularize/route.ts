@@ -3,6 +3,7 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { Attendance } from '@/models/Attendance';
 import { AuditLog } from '@/models/Operations';
+import { resolveOrganizationId, resolveEmployeeForSession } from '@/lib/tenant';
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,26 +13,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { date, reason, requestedCheckIn, requestedCheckOut } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const { date, reason, requestedCheckIn, requestedCheckOut, employeeId } = body;
 
     if (!date || !reason) {
       return NextResponse.json({ success: false, error: 'Date and reason are required' }, { status: 400 });
     }
 
-    const targetEmployeeId = session.employeeId;
-    if (!targetEmployeeId) {
+    const orgId = await resolveOrganizationId(session);
+    const emp = await resolveEmployeeForSession(session, employeeId, orgId);
+    if (!emp) {
       return NextResponse.json({ success: false, error: 'No employee record found for user' }, { status: 400 });
     }
+    const targetEmployeeId = emp._id;
 
     let record = await Attendance.findOne({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       employeeId: targetEmployeeId,
       date,
     });
 
     if (!record) {
       record = new Attendance({
-        organizationId: session.organizationId,
+        organizationId: orgId,
         employeeId: targetEmployeeId,
         date,
         status: 'ABSENT',
@@ -67,8 +71,11 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const roleUpper = (session.role || '').toUpperCase();
+    const isAdminOrManager = roleUpper.includes('ADMIN') || roleUpper.includes('MANAGER') || roleUpper.includes('SUPER') || roleUpper.includes('OWNER');
+
     // Only Managers, HR, Org Admin can approve regularization
-    if (!['ORG_ADMIN', 'HR_ADMIN', 'MANAGER'].includes(session.role)) {
+    if (!isAdminOrManager) {
       return NextResponse.json({ success: false, error: 'Forbidden: Insufficient privileges' }, { status: 403 });
     }
 
@@ -78,9 +85,11 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid attendanceId or decision' }, { status: 400 });
     }
 
+    const orgId = await resolveOrganizationId(session);
+
     const record = await Attendance.findOne({
       _id: attendanceId,
-      organizationId: session.organizationId,
+      organizationId: orgId,
     });
 
     if (!record || !record.regularization?.requested) {
@@ -109,7 +118,7 @@ export async function PUT(req: NextRequest) {
     await record.save();
 
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: `ATTENDANCE_REGULARIZATION_${decision}`,

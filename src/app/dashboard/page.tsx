@@ -14,13 +14,12 @@ import {
   CheckCircle2,
   Download,
 } from 'lucide-react';
+import WebClockWidget from '@/components/attendance/WebClockWidget';
 
 export default function DashboardPage() {
   const { user, organization } = useAuth();
   const [currentDate, setCurrentDate] = useState<string>('');
   const [data, setData] = useState<any>(null);
-  const [punchLoading, setPunchLoading] = useState(false);
-  const [punchMessage, setPunchMessage] = useState('');
 
   const fetchDashboardData = async () => {
     try {
@@ -46,35 +45,12 @@ export default function DashboardPage() {
     fetchDashboardData();
   }, [user]);
 
-  const handlePunch = async () => {
-    setPunchLoading(true);
-    setPunchMessage('');
-    try {
-      const res = await fetch('/api/v1/attendance/punch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workLocation: 'OFFICE' }),
-      });
-      const resData = await res.json();
-      if (resData.success) {
-        setPunchMessage(resData.message);
-        fetchDashboardData();
-      } else {
-        setPunchMessage(resData.error || 'Punch failed');
-      }
-    } catch (e: any) {
-      setPunchMessage(e.message);
-    } finally {
-      setPunchLoading(false);
-    }
-  };
-
   const metrics = data?.metrics || {};
 
   return (
     <DashboardLayout>
       {/* GREETING & HERO */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-6 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <span className="px-2.5 py-0.5 rounded-full bg-orange-50 border border-orange-200 text-orange-700 text-[10px] font-bold uppercase tracking-wider">
@@ -92,30 +68,8 @@ export default function DashboardPage() {
         </div>
 
         {/* WEB CLOCK PUNCH WIDGET */}
-        <div className="flex items-center gap-3 bg-slate-50 border border-slate-200/90 p-3 rounded-2xl shrink-0">
-          <div className="w-10 h-10 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center text-orange-600">
-            <Clock className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-[11px] text-slate-500 font-medium">Daily Attendance Punch</p>
-            <p className="text-xs font-bold text-slate-900">Office Web Clock</p>
-          </div>
-          <button
-            onClick={handlePunch}
-            disabled={punchLoading}
-            className="ml-2 px-4 py-2 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-all disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-          >
-            {punchLoading ? 'Syncing...' : 'Clock In / Out'}
-          </button>
-        </div>
+        <WebClockWidget variant="compact" onPunchSuccess={fetchDashboardData} />
       </div>
-
-      {punchMessage && (
-        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2 shadow-xs">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{punchMessage}</span>
-        </div>
-      )}
 
       {/* KPI METRIC CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
