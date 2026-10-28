@@ -63,7 +63,10 @@ const ALL_MODULES = [
 const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete', 'approve', 'export'];
 
 export default function RolesPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('roles', 'create');
+  const canEdit = hasPermission('roles', 'edit');
+  const canDelete = hasPermission('roles', 'delete');
   const [roles, setRoles] = useState<IRole[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -252,13 +255,15 @@ export default function RolesPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => openModal()}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold text-xs shadow-md shadow-indigo-600/20 transition-transform hover:scale-[1.02] cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Create New Role</span>
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => openModal()}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold text-xs shadow-md shadow-indigo-600/20 transition-transform hover:scale-[1.02] cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create New Role</span>
+          </button>
+        )}
       </div>
 
       {successMsg && (
@@ -388,14 +393,16 @@ export default function RolesPage() {
                   </div>
 
                   <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => openModal(role)}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
-                      title="Edit Role & Permissions"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                    {!isSystemAdminRole && (
+                    {canEdit && (
+                      <button
+                        onClick={() => openModal(role)}
+                        className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-600 hover:text-indigo-600 transition-colors cursor-pointer"
+                        title="Edit Role & Permissions"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {!isSystemAdminRole && canDelete && (
                       <button
                         onClick={() => handleDeleteRole(role)}
                         className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
@@ -509,12 +516,22 @@ export default function RolesPage() {
                         {ALL_MODULES.map((mod) => {
                           const currentActions = permissionsMap[mod.key] || [];
                           const allSelected = PERMISSION_ACTIONS.every((a) => currentActions.includes(a));
+                          const isSettingsKey = mod.key === 'settings';
 
                           return (
-                            <tr key={mod.key} className="hover:bg-slate-50/70 transition-colors">
+                            <tr key={mod.key} className={isSettingsKey ? 'bg-orange-50/70 hover:bg-orange-100/50 transition-colors' : 'hover:bg-slate-50/70 transition-colors'}>
                               <td className="py-2.5 px-4 font-semibold text-slate-900">
-                                <div>{mod.label}</div>
-                                <div className="text-[10px] font-mono text-slate-400">{mod.key}</div>
+                                <div className="flex items-center gap-1.5">
+                                  <span>{mod.label}</span>
+                                  {isSettingsKey && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-200 text-orange-950 font-extrabold uppercase tracking-wide">
+                                      Customize SaaS
+                                    </span>
+                                  )}
+                                </div>
+                                <div className={`text-[10px] ${isSettingsKey ? 'text-orange-700 font-medium' : 'font-mono text-slate-400'}`}>
+                                  {isSettingsKey ? 'Grants this role permission to customize SaaS features' : mod.key}
+                                </div>
                               </td>
 
                               {PERMISSION_ACTIONS.map((action) => {

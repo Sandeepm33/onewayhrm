@@ -5,17 +5,19 @@ import { Department } from '@/models/OrganizationStructure';
 import { Employee } from '@/models/Employee';
 import { Team } from '@/models/Workforce';
 import { AuditLog } from '@/models/Operations';
+import { resolveOrganizationId } from '@/lib/tenant';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { id } = await params;
-    const department = await Department.findOne({ _id: id, organizationId: session.organizationId })
+    const department = await Department.findOne({ _id: id, organizationId: orgId })
       .populate('parentDepartmentId', 'name code')
       .populate('headEmployeeId', 'firstName lastName employeeCode email');
 
@@ -23,15 +25,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ success: false, error: 'Department not found' }, { status: 404 });
     }
 
-    // Fetch employees in this department
-    const employees = await Employee.find({ organizationId: session.organizationId, departmentId: id })
+    // Fetch employees in this department strictly within tenant
+    const employees = await Employee.find({ organizationId: orgId, departmentId: id })
       .populate('roleId', 'name slug')
       .populate('designationId', 'title code')
       .select('firstName lastName employeeCode email roleId designationId status')
       .sort({ firstName: 1 });
 
-    // Fetch teams in this department
-    const teams = await Team.find({ organizationId: session.organizationId, departmentId: id })
+    // Fetch teams in this department strictly within tenant
+    const teams = await Team.find({ organizationId: orgId, departmentId: id })
       .populate('teamLeadId', 'firstName lastName employeeCode email')
       .sort({ name: 1 });
 
@@ -50,10 +52,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { id } = await params;
     const body = await req.json();
     const { name, code, parentDepartmentId, costCenterCode, headEmployeeId, description } = body;
@@ -78,7 +81,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const updated = await Department.findOneAndUpdate(
-      { _id: id, organizationId: session.organizationId },
+      { _id: id, organizationId: orgId },
       { $set: updates },
       { new: true }
     );
@@ -88,7 +91,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: 'DEPARTMENT_UPDATED',
@@ -111,15 +114,16 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { id } = await params;
 
     // Safety check: Cannot delete if employees are currently assigned to this department
     const employeeCount = await Employee.countDocuments({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       departmentId: id,
     });
 
@@ -135,7 +139,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     // Safety check: Cannot delete if child subdepartments exist
     const subdeptCount = await Department.countDocuments({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       parentDepartmentId: id,
     });
 
@@ -151,7 +155,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     const deleted = await Department.findOneAndDelete({
       _id: id,
-      organizationId: session.organizationId,
+      organizationId: orgId,
     });
 
     if (!deleted) {
@@ -159,7 +163,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     }
 
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: 'DEPARTMENT_DELETED',

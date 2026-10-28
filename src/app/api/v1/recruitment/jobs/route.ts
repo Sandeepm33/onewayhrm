@@ -3,6 +3,7 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { JobRequisition, Candidate } from '@/models/Recruitment';
 import { AuditLog } from '@/models/Operations';
+import { resolveOrganizationId } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
@@ -12,10 +13,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status');
 
-    const query: any = { organizationId: session.organizationId };
+    const query: any = { organizationId: orgId };
     if (status) query.status = status;
 
     const jobs = await JobRequisition.find(query)
@@ -24,10 +26,10 @@ export async function GET(req: NextRequest) {
       .populate('hiringManagerId', 'firstName lastName')
       .sort({ createdAt: -1 });
 
-    // Attach candidate counts for each job
+    // Attach candidate counts for each job strictly within tenant
     const jobsWithCounts = await Promise.all(
       jobs.map(async (job) => {
-        const candidateCount = await Candidate.countDocuments({ jobId: job._id });
+        const candidateCount = await Candidate.countDocuments({ jobId: job._id, organizationId: orgId });
         return { ...job.toObject(), candidateCount };
       })
     );
@@ -47,6 +49,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const body = await req.json();
     const {
       title,
@@ -67,7 +70,7 @@ export async function POST(req: NextRequest) {
     }
 
     const job = await JobRequisition.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       title,
       departmentId: departmentId || undefined,
       branchId: branchId || undefined,
@@ -83,7 +86,7 @@ export async function POST(req: NextRequest) {
     });
 
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: 'JOB_REQUISITION_CREATED',

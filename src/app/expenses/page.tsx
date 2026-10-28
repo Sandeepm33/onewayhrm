@@ -6,7 +6,9 @@ import { useAuth } from '@/context/AuthContext';
 import { Receipt, Plus, CheckCircle2, X, Check, Ban, CreditCard } from 'lucide-react';
 
 export default function ExpensesPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('expenses', 'create');
+  const canApprove = hasPermission('expenses', 'approve');
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -98,13 +100,15 @@ export default function ExpensesPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-all cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Submit Expense Claim</span>
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => setModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Submit Expense Claim</span>
+          </button>
+        )}
       </div>
 
       {/* TABLE */}
@@ -150,7 +154,7 @@ export default function ExpensesPage() {
                     </span>
                   </td>
                   <td className="py-3.5 px-4 text-right">
-                    {exp.status === 'PENDING' && ['SUPER_ADMIN', 'ORG_ADMIN', 'PAYROLL_ADMIN', 'MANAGER'].includes(user?.role || '') && (
+                    {exp.status === 'PENDING' && canApprove && (
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => handleStatus(exp._id, 'APPROVED')}
@@ -166,7 +170,7 @@ export default function ExpensesPage() {
                         </button>
                       </div>
                     )}
-                    {exp.status === 'APPROVED' && ['SUPER_ADMIN', 'ORG_ADMIN', 'PAYROLL_ADMIN'].includes(user?.role || '') && (
+                    {exp.status === 'APPROVED' && canApprove && (
                       <button
                         onClick={() => handleStatus(exp._id, 'REIMBURSED')}
                         className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] shadow-sm cursor-pointer"

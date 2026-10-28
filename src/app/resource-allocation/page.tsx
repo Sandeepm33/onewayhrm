@@ -60,7 +60,9 @@ interface IUtilization {
 }
 
 export default function ResourceAllocationPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('resource-allocation', 'create');
+  const canDelete = hasPermission('resource-allocation', 'delete');
   const [allocations, setAllocations] = useState<IAllocation[]>([]);
   const [projects, setProjects] = useState<IProject[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -208,13 +210,15 @@ export default function ResourceAllocationPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold text-xs shadow-md shadow-teal-600/20 transition-transform hover:scale-[1.02] cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Allocate Resource</span>
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => setModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white font-bold text-xs shadow-md shadow-teal-600/20 transition-transform hover:scale-[1.02] cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Allocate Resource</span>
+          </button>
+        )}
       </div>
 
       {successMsg && (
@@ -479,13 +483,15 @@ export default function ResourceAllocationPage() {
                       {a.endDate ? `→ ${new Date(a.endDate).toLocaleDateString('en-IN')}` : '(Ongoing)'}
                     </td>
                     <td className="py-3 px-4 text-right">
-                      <button
-                        onClick={() => handleDeleteAllocation(a._id)}
-                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                        title="Release Allocation"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {canDelete && (
+                        <button
+                          onClick={() => handleDeleteAllocation(a._id)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="Release Allocation"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

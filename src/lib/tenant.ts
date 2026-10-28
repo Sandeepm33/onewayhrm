@@ -1,12 +1,14 @@
 import mongoose from 'mongoose';
 import { Organization } from '@/models/Organization';
+import { User } from '@/models/User';
+import { Employee } from '@/models/Employee';
 
 /**
  * Safely resolves a valid mongoose ObjectId for organizationId from session.
- * If user session has an empty string or invalid ObjectId (e.g. Super Admin or Platform Owner),
- * it falls back to the primary organization in the database or provisions a default.
+ * In a multi-tenant SaaS application, each organization's data must be 100% strictly isolated.
  */
 export async function resolveOrganizationId(session: any): Promise<mongoose.Types.ObjectId> {
+  // 1. Direct valid organizationId on session token
   if (session?.organizationId && typeof session.organizationId === 'string' && mongoose.Types.ObjectId.isValid(session.organizationId)) {
     return new mongoose.Types.ObjectId(session.organizationId);
   }
@@ -15,13 +17,56 @@ export async function resolveOrganizationId(session: any): Promise<mongoose.Type
     return session.organizationId;
   }
 
-  // Fallback to first existing organization in DB
-  const existingOrg = await Organization.findOne().sort({ createdAt: 1 });
+  // 2. Look up user in DB to check their assigned organization
+  if (session?.userId && mongoose.Types.ObjectId.isValid(session.userId)) {
+    const userDoc = await User.findById(session.userId);
+    if (userDoc?.organizationId && mongoose.Types.ObjectId.isValid(userDoc.organizationId)) {
+      return userDoc.organizationId as mongoose.Types.ObjectId;
+    }
+  }
+
+  // 2b. Look up user or employee by email to find their registered organization
+  const cleanEmail = (session?.email || '').toLowerCase().trim();
+  if (cleanEmail) {
+    const userDoc = await User.findOne({ email: cleanEmail });
+    if (userDoc?.organizationId && mongoose.Types.ObjectId.isValid(userDoc.organizationId)) {
+      return userDoc.organizationId as mongoose.Types.ObjectId;
+    }
+    const empDoc = await Employee.findOne({ email: cleanEmail });
+    if (empDoc?.organizationId && mongoose.Types.ObjectId.isValid(empDoc.organizationId)) {
+      return empDoc.organizationId as mongoose.Types.ObjectId;
+    }
+  }
+
+  // 3. For Platform Owner / Super Admin: dedicated Master Platform Organization
+  const roleUpper = (session?.role || '').toUpperCase();
+  if (roleUpper.includes('SUPER') || roleUpper.includes('PLATFORM') || cleanEmail === 'owner@onewayhr.com') {
+    let masterOrg = await Organization.findOne({ slug: 'onewayhr-master' });
+    if (!masterOrg) {
+      masterOrg = await Organization.create({
+        name: 'OneWayHR Master Platform',
+        slug: 'onewayhr-master',
+        contactEmail: 'owner@onewayhr.com',
+        currency: 'INR',
+        timezone: 'Asia/Kolkata',
+        plan: 'ENTERPRISE',
+        planStatus: 'ACTIVE',
+        employeeLimit: 9999,
+        features: [],
+        statutoryConfig: { epfEnabled: true, esiEnabled: true },
+        workWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+      });
+    }
+    return masterOrg._id as mongoose.Types.ObjectId;
+  }
+
+  // 4. Fallback to first existing customer organization in DB
+  const existingOrg = await Organization.findOne({ slug: { $ne: 'onewayhr-master' } }).sort({ createdAt: 1 });
   if (existingOrg) {
     return existingOrg._id as mongoose.Types.ObjectId;
   }
 
-  // Auto-provision initial tenant if database has no organizations yet
+  // 5. Auto-provision initial tenant if database has no organizations yet
   const defaultOrg = await Organization.create({
     name: 'OneWayHR Cloud',
     slug: 'onewayhr-cloud',
@@ -33,17 +78,15 @@ export async function resolveOrganizationId(session: any): Promise<mongoose.Type
     employeeLimit: 250,
     features: [],
     statutoryConfig: { epfEnabled: true, esiEnabled: true },
-    workWeek: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'],
+    workWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
   });
 
   return defaultOrg._id as mongoose.Types.ObjectId;
 }
 
-import { Employee } from '@/models/Employee';
-
 /**
- * Safely resolves or auto-provisions an Employee profile for the current user/session.
- * Guaranteed to return an active Employee document so employee operations never fail.
+ * Safely resolves or auto-provisions an Employee profile strictly within the tenant's organization.
+ * Guaranteed to return an active Employee document belonging ONLY to finalOrgId.
  */
 export async function resolveEmployeeForSession(session: any, targetId?: string, orgId?: mongoose.Types.ObjectId) {
   const finalOrgId = orgId || await resolveOrganizationId(session);
@@ -51,27 +94,28 @@ export async function resolveEmployeeForSession(session: any, targetId?: string,
   const roleUpper = (session?.role || '').toUpperCase();
   const isAdminOrManager = roleUpper.includes('ADMIN') || roleUpper.includes('MANAGER') || roleUpper.includes('SUPER') || roleUpper.includes('OWNER');
 
+  // If admin/manager requesting another employee in THIS organization
   if (targetId && mongoose.Types.ObjectId.isValid(targetId) && isAdminOrManager) {
-    const targetEmp = await Employee.findById(targetId);
+    const targetEmp = await Employee.findOne({ _id: targetId, organizationId: finalOrgId });
     if (targetEmp) return targetEmp;
   }
 
+  // Check direct employeeId if it belongs to finalOrgId
   if (session?.employeeId && mongoose.Types.ObjectId.isValid(session.employeeId)) {
-    const emp = await Employee.findById(session.employeeId);
+    const emp = await Employee.findOne({ _id: session.employeeId, organizationId: finalOrgId });
     if (emp) return emp;
   }
 
+  // Look up by userId inside finalOrgId
   if (session?.userId && mongoose.Types.ObjectId.isValid(session.userId)) {
-    let emp = await Employee.findOne({ userId: session.userId });
+    let emp = await Employee.findOne({ userId: session.userId, organizationId: finalOrgId });
     if (emp) return emp;
   }
 
+  // Look up by email STRICTLY inside finalOrgId
   const cleanEmail = (session?.email || '').toLowerCase().trim();
   if (cleanEmail) {
     let emp = await Employee.findOne({ email: cleanEmail, organizationId: finalOrgId });
-    if (!emp) {
-      emp = await Employee.findOne({ email: cleanEmail });
-    }
     if (emp) {
       if (session?.userId && mongoose.Types.ObjectId.isValid(session.userId) && !emp.userId) {
         emp.userId = session.userId;

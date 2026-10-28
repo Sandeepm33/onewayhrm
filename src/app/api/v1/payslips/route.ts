@@ -3,6 +3,7 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { Payslip } from '@/models/Payroll';
 import { Organization } from '@/models/Organization';
+import { resolveOrganizationId, resolveEmployeeForSession } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
@@ -12,17 +13,21 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { searchParams } = new URL(req.url);
     const payrollRunId = searchParams.get('payrollRunId');
     const employeeId = searchParams.get('employeeId');
     const month = searchParams.get('month');
     const year = searchParams.get('year');
 
-    const query: any = { organizationId: session.organizationId };
+    const query: any = { organizationId: orgId };
 
     // Employee role restriction
-    if (session.role === 'EMPLOYEE' && session.employeeId) {
-      query.employeeId = session.employeeId;
+    if (session.role === 'EMPLOYEE') {
+      const emp = await resolveEmployeeForSession(session, undefined, orgId);
+      if (emp) {
+        query.employeeId = emp._id;
+      }
       query.isPublished = true; // Employees only see published payslips
     } else if (employeeId) {
       query.employeeId = employeeId;
@@ -43,7 +48,7 @@ export async function GET(req: NextRequest) {
           ],
         })
         .sort({ year: -1, month: -1 }),
-      Organization.findById(session.organizationId),
+      Organization.findById(orgId),
     ]);
 
     return NextResponse.json({ success: true, payslips, organization });

@@ -17,8 +17,45 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const cleanEmail = email.toLowerCase().trim();
+    const rawIdentifier = String(email).trim();
+    const cleanEmail = rawIdentifier.toLowerCase();
+    const upperCode = rawIdentifier.toUpperCase();
+
+    // 1. Try finding user directly by email
     let user = await User.findOne({ email: cleanEmail });
+
+    // 2. If not found by email, try finding employee by employeeCode or email
+    let employeeDoc = null;
+    if (!user) {
+      employeeDoc = await Employee.findOne({
+        $or: [{ email: cleanEmail }, { employeeCode: upperCode }],
+      });
+
+      if (employeeDoc) {
+        if (employeeDoc.userId) {
+          user = await User.findById(employeeDoc.userId);
+        }
+        if (!user && employeeDoc.email) {
+          user = await User.findOne({ email: employeeDoc.email.toLowerCase() });
+        }
+
+        // If employee exists but has no User account yet, allow sign-in with default password 'Welcome@123'
+        if (!user && password === 'Welcome@123') {
+          const passwordHash = await hashPassword('Welcome@123');
+          user = await User.create({
+            organizationId: employeeDoc.organizationId,
+            employeeId: employeeDoc._id,
+            email: employeeDoc.email.toLowerCase(),
+            name: `${employeeDoc.firstName} ${employeeDoc.lastName}`,
+            passwordHash,
+            role: 'EMPLOYEE',
+            isActive: true,
+          });
+          employeeDoc.userId = user._id as any;
+          await employeeDoc.save();
+        }
+      }
+    }
 
     // Auto-seed Platform Owner if missing or database was purged
     if (!user && cleanEmail === 'owner@onewayhr.com' && password === 'Owner@12345') {
@@ -34,7 +71,7 @@ export async function POST(req: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { success: false, error: 'Invalid email or password' },
+        { success: false, error: 'Invalid email/employee ID or password' },
         { status: 401 }
       );
     }
@@ -49,7 +86,7 @@ export async function POST(req: NextRequest) {
     const isValid = await comparePassword(password, user.passwordHash);
     if (!isValid) {
       return NextResponse.json(
-        { success: false, error: 'Invalid email or password' },
+        { success: false, error: 'Invalid email/employee ID or password' },
         { status: 401 }
       );
     }
@@ -58,14 +95,30 @@ export async function POST(req: NextRequest) {
     user.lastLogin = new Date();
     await user.save();
 
-    let organization = null;
-    if (user.organizationId) {
-      organization = await Organization.findById(user.organizationId);
-    }
-
     let employee = null;
     if (user.employeeId) {
       employee = await Employee.findById(user.employeeId);
+    }
+    if (!employee && user.email) {
+      employee = await Employee.findOne({ email: cleanEmail });
+      if (employee) {
+        user.employeeId = employee._id as any;
+      }
+    }
+
+    let orgId = user.organizationId ? String(user.organizationId) : '';
+    if (!orgId && employee?.organizationId) {
+      orgId = String(employee.organizationId);
+      user.organizationId = employee.organizationId as any;
+    }
+
+    if (user.isModified('employeeId') || user.isModified('organizationId')) {
+      await user.save();
+    }
+
+    let organization = null;
+    if (orgId) {
+      organization = await Organization.findById(orgId);
     }
 
     const tokenPayload = {
@@ -73,8 +126,9 @@ export async function POST(req: NextRequest) {
       email: user.email,
       name: user.name,
       role: user.role,
-      organizationId: user.organizationId ? String(user.organizationId) : '',
-      employeeId: user.employeeId ? String(user.employeeId) : undefined,
+      organizationId: orgId,
+      employeeId: employee ? String(employee._id) : (user.employeeId ? String(user.employeeId) : undefined),
+      canCustomizeSaas: Boolean(user.canCustomizeSaas),
     };
 
     const token = signJwtToken(tokenPayload);
@@ -87,8 +141,9 @@ export async function POST(req: NextRequest) {
         email: user.email,
         name: user.name,
         role: user.role,
-        organizationId: user.organizationId,
-        employeeId: user.employeeId,
+        organizationId: orgId,
+        employeeId: employee ? employee._id : user.employeeId,
+        canCustomizeSaas: Boolean(user.canCustomizeSaas),
       },
       organization,
       employee,

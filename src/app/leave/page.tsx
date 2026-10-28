@@ -17,7 +17,9 @@ import {
 } from 'lucide-react';
 
 export default function LeavePage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('leave', 'create');
+  const canApprove = hasPermission('leave', 'approve');
   const [requests, setRequests] = useState<any[]>([]);
   const [balance, setBalance] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -132,13 +134,15 @@ export default function LeavePage() {
           </p>
         </div>
 
-        <button
-          onClick={() => setApplyModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-transform hover:scale-[1.02] cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Apply for Leave</span>
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => setApplyModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-transform hover:scale-[1.02] cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Apply for Leave</span>
+          </button>
+        )}
       </div>
 
       {success && (
@@ -272,7 +276,7 @@ export default function LeavePage() {
                     </span>
                   </td>
                   <td className="py-3.5 px-4 text-right">
-                    {req.status === 'PENDING' && ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'MANAGER'].includes(user?.role || '') && (
+                    {req.status === 'PENDING' && canApprove && (
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => handleDecision(req._id, 'APPROVED')}

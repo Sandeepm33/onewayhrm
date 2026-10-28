@@ -34,12 +34,23 @@ import {
 } from 'lucide-react';
 
 function AttendanceContent() {
-  const { user } = useAuth();
-  const roleUpper = (user?.role || '').toUpperCase();
-  const isAdminOrManager = roleUpper.includes('ADMIN') || roleUpper.includes('MANAGER') || roleUpper.includes('SUPER') || roleUpper.includes('OWNER');
+  const { user, employee, roleData, hasPermission } = useAuth();
+  const isPlatformOwner = user?.role === 'SUPER_ADMIN' || user?.role === 'PLATFORM_OWNER';
+  const canCreate = hasPermission('attendance', 'create');
+  const canApprove = hasPermission('attendance', 'approve');
+  const canEdit = hasPermission('attendance', 'edit');
+  const isSystemAdmin = isPlatformOwner || Boolean(roleData?.isSystemAdmin);
+  const [userScope, setUserScope] = useState<'ADMIN' | 'MANAGER' | 'EMPLOYEE'>('EMPLOYEE');
+  const [currentEmpId, setCurrentEmpId] = useState<string>('');
+
+  const isAdminOrManager = isSystemAdmin || canApprove || userScope === 'ADMIN' || userScope === 'MANAGER';
 
   // Active Main Tab
   const [activeTab, setActiveTab] = useState<'calendar' | 'table' | 'holidays'>('calendar');
+
+  // Employee Scope Filter (For Admin/Manager viewing specific employee's calendar or table)
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('ALL');
+  const [employeesList, setEmployeesList] = useState<any[]>([]);
 
   // Attendance state
   const [attendances, setAttendances] = useState<any[]>([]);
@@ -98,6 +109,24 @@ function AttendanceContent() {
     return `${y}-${m}`;
   }, [currentCalendarDate]);
 
+  // Fetch employees list for organization filter (admins/managers)
+  const fetchEmployees = async () => {
+    if (!isSystemAdmin && !canApprove) return;
+    try {
+      const res = await fetch('/api/v1/employees');
+      const data = await res.json();
+      if (data.success && userScope !== 'MANAGER') {
+        setEmployeesList(data.employees || []);
+      }
+    } catch (e) {
+      console.error('Failed to load employees for filter', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchEmployees();
+  }, [isAdminOrManager, isSystemAdmin, canApprove]);
+
   // Fetch Attendance & Month Holidays
   const fetchAttendance = async () => {
     setLoading(true);
@@ -106,12 +135,28 @@ function AttendanceContent() {
       if (selectedDate && activeTab === 'table') {
         url = `/api/v1/attendance?date=${selectedDate}`;
       }
+
+      if (selectedEmployeeId === 'MY') {
+        url += '&myOnly=true';
+      } else if (selectedEmployeeId && selectedEmployeeId !== 'ALL') {
+        url += `&employeeId=${selectedEmployeeId}`;
+      }
+
       const res = await fetch(url);
       const data = await res.json();
       if (data.success) {
         setAttendances(data.attendances || []);
         if (data.holidays) {
           setHolidays(data.holidays);
+        }
+        if (data.userScope) {
+          setUserScope(data.userScope);
+        }
+        if (data.currentEmployeeId) {
+          setCurrentEmpId(data.currentEmployeeId);
+        }
+        if (data.userScope === 'MANAGER' && Array.isArray(data.subordinates)) {
+          setEmployeesList(data.subordinates);
         }
       }
     } catch (e) {
@@ -136,7 +181,7 @@ function AttendanceContent() {
 
   useEffect(() => {
     fetchAttendance();
-  }, [currentMonthStr, selectedDate, activeTab]);
+  }, [currentMonthStr, selectedDate, activeTab, selectedEmployeeId]);
 
   useEffect(() => {
     fetchHolidays();
@@ -349,8 +394,16 @@ function AttendanceContent() {
       const isWeekend = curDate.getDay() === 0 || curDate.getDay() === 6;
       const isToday = todayStr ? dateStr === todayStr : false;
 
-      // Match attendance for this date
-      const attendance = attendances.find((a) => a.date === dateStr);
+      // Match attendance for this date (strictly scoped to the selected employee!)
+      const targetEmpId = selectedEmployeeId === 'MY' ? (employee?._id || user?.employeeId) : selectedEmployeeId;
+      const attendance = attendances.find((a) => {
+        if (a.date !== dateStr) return false;
+        if (targetEmpId && targetEmpId !== 'ALL') {
+          return String(a.employeeId?._id || a.employeeId) === String(targetEmpId);
+        }
+        return true;
+      });
+
       // Match holiday for this date
       const holiday = holidays.find((h) => h.date === dateStr);
 
@@ -381,7 +434,7 @@ function AttendanceContent() {
     }
 
     return days;
-  }, [currentCalendarDate, attendances, holidays, todayStr]);
+  }, [currentCalendarDate, attendances, holidays, todayStr, selectedEmployeeId, employee, user]);
 
   // Monthly summary stats
   const monthlyStats = useMemo(() => {
@@ -592,21 +645,42 @@ function AttendanceContent() {
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handlePrevMonth}
-                className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 cursor-pointer transition-colors"
-                title="Previous month"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
-                onClick={handleNextMonth}
-                className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 cursor-pointer transition-colors"
-                title="Next month"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
+            <div className="flex items-center gap-3">
+              {isAdminOrManager && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-500 hidden md:inline">Viewing Shifts:</span>
+                  <select
+                    value={selectedEmployeeId}
+                    onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 bg-slate-50 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500/30 cursor-pointer shadow-xs"
+                  >
+                    <option value="MY">👤 My Shifts ({user?.name || 'Self'})</option>
+                    <option value="ALL">🏢 All Employees (Combined)</option>
+                    {employeesList.map((emp) => (
+                      <option key={emp._id} value={emp._id}>
+                        {emp.employeeCode} - {emp.firstName} {emp.lastName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={handlePrevMonth}
+                  className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 cursor-pointer transition-colors"
+                  title="Previous month"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleNextMonth}
+                  className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 cursor-pointer transition-colors"
+                  title="Next month"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -766,7 +840,7 @@ function AttendanceContent() {
         <div className="space-y-4">
           {/* FILTER BAR */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs text-xs">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <span className="text-slate-700 font-bold flex items-center gap-1.5">
                 <Filter className="w-3.5 h-3.5 text-orange-500" />
                 Filter by Exact Date:
@@ -782,8 +856,29 @@ function AttendanceContent() {
                   onClick={() => setSelectedDate('')}
                   className="text-xs text-orange-600 hover:text-orange-700 font-bold cursor-pointer"
                 >
-                  Clear Filter
+                  Clear Date
                 </button>
+              )}
+
+              {(userScope === 'ADMIN' || userScope === 'MANAGER' || isAdminOrManager) && (
+                <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
+                  <span className="text-slate-600 font-bold">Scope:</span>
+                  <select
+                    value={selectedEmployeeId}
+                    onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 font-semibold focus:bg-white focus:border-orange-500"
+                  >
+                    <option value="ALL">
+                      {userScope === 'MANAGER' ? 'My Team & Myself' : 'All Organization Members'}
+                    </option>
+                    <option value="MY">Only My Punches</option>
+                    {employeesList.map((emp) => (
+                      <option key={emp._id} value={emp._id}>
+                        {emp.firstName} {emp.lastName} ({emp.employeeCode})
+                      </option>
+                    ))}
+                  </select>
+                </div>
               )}
             </div>
 
@@ -879,49 +974,71 @@ function AttendanceContent() {
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right">
-                        {att.checkIn && !att.checkOut ? (
-                          <div className="flex items-center justify-end gap-1.5">
-                            {att.breaks?.some((b: any) => !b.endTime) ? (
-                              <button
-                                type="button"
-                                onClick={() => handlePunchForEmployee(att.employeeId?._id || att.employeeId, 'END_BREAK')}
-                                className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-[11px] flex items-center gap-1 shadow-xs cursor-pointer animate-pulse"
-                                title="Break Out: End break for this employee"
-                              >
-                                <RotateCcw className="w-3 h-3" />
-                                <span>Break Out</span>
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handlePunchForEmployee(att.employeeId?._id || att.employeeId, 'START_BREAK', 'TEA')}
-                                className="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 font-extrabold text-[11px] flex items-center gap-1 shadow-xs cursor-pointer"
-                                title="Break In: Start break for this employee"
-                              >
-                                <Coffee className="w-3 h-3 text-amber-600" />
-                                <span>Break In</span>
-                              </button>
-                            )}
+                        {(() => {
+                          const isSelf =
+                            (att.employeeId?._id && employee?._id && att.employeeId._id.toString() === employee._id.toString()) ||
+                            (att.employeeId?._id && currentEmpId && att.employeeId._id.toString() === currentEmpId.toString()) ||
+                            (att.employeeId?._id && user?.employeeId && att.employeeId._id.toString() === user.employeeId.toString()) ||
+                            (att.employeeId?.email && user?.email && att.employeeId.email.toLowerCase() === user.email.toLowerCase());
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (confirm(`Clock out ${att.employeeId?.firstName || 'employee'}?`)) {
-                                  handlePunchForEmployee(att.employeeId?._id || att.employeeId, 'CLOCK_OUT');
-                                }
-                              }}
-                              className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] flex items-center gap-1 shadow-xs cursor-pointer"
-                              title="Clock out employee"
-                            >
-                              <LogOut className="w-3 h-3" />
-                              <span>Clock Out</span>
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-[11px] text-slate-400 font-medium">
-                            {att.checkOut ? 'Shift Ended' : 'Not Clocked In'}
-                          </span>
-                        )}
+                          if (att.checkIn && !att.checkOut) {
+                            if (isSelf || isSystemAdmin) {
+                              return (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {att.breaks?.some((b: any) => !b.endTime) ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePunchForEmployee(att.employeeId?._id || att.employeeId, 'END_BREAK')}
+                                      className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-[11px] flex items-center gap-1 shadow-xs cursor-pointer animate-pulse"
+                                      title="Break Out: End break"
+                                    >
+                                      <RotateCcw className="w-3 h-3" />
+                                      <span>Break Out</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePunchForEmployee(att.employeeId?._id || att.employeeId, 'START_BREAK', 'TEA')}
+                                      className="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 font-extrabold text-[11px] flex items-center gap-1 shadow-xs cursor-pointer"
+                                      title="Break In: Start break"
+                                    >
+                                      <Coffee className="w-3 h-3 text-amber-600" />
+                                      <span>Break In</span>
+                                    </button>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (confirm(`Clock out ${att.employeeId?.firstName || 'employee'}?`)) {
+                                        handlePunchForEmployee(att.employeeId?._id || att.employeeId, 'CLOCK_OUT');
+                                      }
+                                    }}
+                                    className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] flex items-center gap-1 shadow-xs cursor-pointer"
+                                    title="Clock out employee"
+                                  >
+                                    <LogOut className="w-3 h-3 text-rose-400" />
+                                    <span>Clock Out</span>
+                                  </button>
+                                </div>
+                              );
+                            }
+
+                            // Active shift status for subordinate employees viewed by Manager / TL
+                            return (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 font-extrabold text-[10px]">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                <span>{att.breaks?.some((b: any) => !b.endTime) ? 'On Break' : 'Active On Shift'}</span>
+                              </span>
+                            );
+                          }
+
+                          return (
+                            <span className="text-[11px] text-slate-400 font-medium">
+                              {att.checkOut ? 'Shift Ended' : 'Not Clocked In'}
+                            </span>
+                          );
+                        })()}
                       </td>
                     </tr>
                   ))}

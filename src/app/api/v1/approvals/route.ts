@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
+import { resolveOrganizationId } from '@/lib/tenant';
 import { ApprovalWorkflow, ApprovalRequest } from '@/models/ApprovalWorkflow';
 import { Employee } from '@/models/Employee';
 import { Role } from '@/models/Role';
@@ -9,16 +10,21 @@ export async function GET(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
+    if (!orgId) {
+      return NextResponse.json({ success: false, error: 'Organization context required' }, { status: 400 });
+    }
+
     // Auto-seed default enterprise MNC approval workflows if none exist
-    let workflows = await ApprovalWorkflow.find({ organizationId: session.organizationId });
+    let workflows = await ApprovalWorkflow.find({ organizationId: orgId });
     if (workflows.length === 0) {
       const defaultWorkflows = [
         {
-          organizationId: session.organizationId,
+          organizationId: orgId,
           module: 'LEAVE',
           name: 'Standard Leave Approval Workflow',
           description: 'Step 1: Direct HR Reporting Manager -> Step 2: HR Manager validation',
@@ -29,7 +35,7 @@ export async function GET(req: NextRequest) {
           ],
         },
         {
-          organizationId: session.organizationId,
+          organizationId: orgId,
           module: 'TIMESHEET',
           name: 'Client Project Timesheet Dual-Approval',
           description: 'Step 1: Technical Lead task review -> Step 2: Project Manager billing signoff',
@@ -40,7 +46,7 @@ export async function GET(req: NextRequest) {
           ],
         },
         {
-          organizationId: session.organizationId,
+          organizationId: orgId,
           module: 'ATTENDANCE_REGULARIZATION',
           name: 'Biometric Clock Regularization Flow',
           description: 'Step 1: Direct Line Manager review -> Step 2: HR Attendance Policy validation',
@@ -51,7 +57,7 @@ export async function GET(req: NextRequest) {
           ],
         },
         {
-          organizationId: session.organizationId,
+          organizationId: orgId,
           module: 'EXPENSE_CLAIM',
           name: 'Corporate Expense Reimbursement Flow',
           description: 'Step 1: Manager expense verification -> Step 2: Finance Controller disbursement',
@@ -62,7 +68,7 @@ export async function GET(req: NextRequest) {
           ],
         },
         {
-          organizationId: session.organizationId,
+          organizationId: orgId,
           module: 'BUDGET_REVISION',
           name: 'Project Budget Revision Workflow',
           description: 'Step 1: Engineering Manager / PM -> Step 2: Finance Controller approval',
@@ -75,24 +81,24 @@ export async function GET(req: NextRequest) {
       ];
 
       await ApprovalWorkflow.insertMany(defaultWorkflows);
-      workflows = await ApprovalWorkflow.find({ organizationId: session.organizationId });
+      workflows = await ApprovalWorkflow.find({ organizationId: orgId });
     }
 
     // Fetch approval requests
-    let requests = await ApprovalRequest.find({ organizationId: session.organizationId })
+    let requests = await ApprovalRequest.find({ organizationId: orgId })
       .populate('requesterEmployeeId', 'firstName lastName employeeCode email')
       .sort({ createdAt: -1 });
 
     // If no approval requests exist, generate a couple realistic pending enterprise demo requests so the user can experience the approval engine
     if (requests.length === 0) {
-      const emps = await Employee.find({ organizationId: session.organizationId }).limit(3);
+      const emps = await Employee.find({ organizationId: orgId }).limit(3);
       if (emps.length > 0) {
         const emp1 = emps[0];
         const emp2 = emps[1] || emps[0];
 
         await ApprovalRequest.create([
           {
-            organizationId: session.organizationId,
+            organizationId: orgId,
             module: 'LEAVE',
             entityId: 'LV-SAMPLE-01',
             requestNumber: 'REQ-LV-001',
@@ -107,7 +113,7 @@ export async function GET(req: NextRequest) {
             stepHistory: [],
           },
           {
-            organizationId: session.organizationId,
+            organizationId: orgId,
             module: 'TIMESHEET',
             entityId: 'TS-SAMPLE-01',
             requestNumber: 'REQ-TS-002',
@@ -123,7 +129,7 @@ export async function GET(req: NextRequest) {
           },
         ]);
 
-        requests = await ApprovalRequest.find({ organizationId: session.organizationId })
+        requests = await ApprovalRequest.find({ organizationId: orgId })
           .populate('requesterEmployeeId', 'firstName lastName employeeCode email')
           .sort({ createdAt: -1 });
       }
@@ -144,8 +150,13 @@ export async function POST(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const orgId = await resolveOrganizationId(session);
+    if (!orgId) {
+      return NextResponse.json({ success: false, error: 'Organization context required' }, { status: 400 });
     }
 
     const body = await req.json();
@@ -159,7 +170,7 @@ export async function POST(req: NextRequest) {
     }
 
     const workflow = await ApprovalWorkflow.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       module,
       name: name.trim(),
       description: description || '',

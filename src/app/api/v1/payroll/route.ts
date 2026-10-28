@@ -6,6 +6,7 @@ import { Employee } from '@/models/Employee';
 import { Attendance } from '@/models/Attendance';
 import { LeaveRequest } from '@/models/Leave';
 import { AuditLog } from '@/models/Operations';
+import { resolveOrganizationId } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
@@ -15,7 +16,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const runs = await PayrollRun.find({ organizationId: session.organizationId })
+    const orgId = await resolveOrganizationId(session);
+    const runs = await PayrollRun.find({ organizationId: orgId })
       .populate('processedBy', 'name email')
       .populate('approvedBy', 'name email')
       .sort({ year: -1, month: -1 });
@@ -39,13 +41,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { month, year, notes } = await req.json();
     if (!month || !year) {
       return NextResponse.json({ success: false, error: 'Month and year are required' }, { status: 400 });
     }
 
     const existing = await PayrollRun.findOne({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       month: Number(month),
       year: Number(year),
     });
@@ -59,7 +62,7 @@ export async function POST(req: NextRequest) {
 
     // Get all active employees in this org
     const employees = await Employee.find({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       status: { $in: ['ACTIVE', 'PROBATION', 'NOTICE_PERIOD'] },
     });
 
@@ -82,7 +85,7 @@ export async function POST(req: NextRequest) {
     let run = existing;
     if (!run) {
       run = new PayrollRun({
-        organizationId: session.organizationId,
+        organizationId: orgId,
         month: Number(month),
         year: Number(year),
         title: `Payroll - ${monthName} ${year}`,
@@ -93,7 +96,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Clear old draft payslips if recomputing
-    await Payslip.deleteMany({ payrollRunId: run._id });
+    await Payslip.deleteMany({ payrollRunId: run._id, organizationId: orgId });
 
     // Compute payslips with India statutory rules
     for (const emp of employees) {
@@ -130,7 +133,7 @@ export async function POST(req: NextRequest) {
       totalEmployerCost += employerCost;
 
       await Payslip.create({
-        organizationId: session.organizationId,
+        organizationId: orgId,
         payrollRunId: run._id,
         employeeId: emp._id,
         month: Number(month),
@@ -174,7 +177,7 @@ export async function POST(req: NextRequest) {
     await run.save();
 
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: 'PAYROLL_RUN_CALCULATED',
@@ -206,9 +209,10 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { runId, action, notes, paymentReference } = await req.json();
 
-    const run = await PayrollRun.findOne({ _id: runId, organizationId: session.organizationId });
+    const run = await PayrollRun.findOne({ _id: runId, organizationId: orgId });
     if (!run) {
       return NextResponse.json({ success: false, error: 'Payroll run not found' }, { status: 404 });
     }
@@ -226,7 +230,7 @@ export async function PUT(req: NextRequest) {
 
       // Mark all associated payslips as published
       await Payslip.updateMany(
-        { payrollRunId: run._id },
+        { payrollRunId: run._id, organizationId: orgId },
         {
           $set: {
             isPublished: true,
@@ -242,7 +246,7 @@ export async function PUT(req: NextRequest) {
     await run.save();
 
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: `PAYROLL_${action}`,

@@ -22,6 +22,9 @@ import {
   Layers,
   MapPin,
   Lock,
+  Users,
+  Search,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface CustomRoleItem {
@@ -58,8 +61,46 @@ const ALL_MODULE_KEYS = [
 const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete', 'approve'];
 
 export default function SettingsPage() {
-  const { user, organization, refreshSession } = useAuth();
-  const [activeTab, setActiveTab] = useState<'roles' | 'features' | 'profile' | 'structure'>('roles');
+  const { user, roleData, organization, refreshSession, hasPermission } = useAuth();
+
+  const isPlatformOwner =
+    user?.role === 'SUPER_ADMIN' ||
+    user?.role === 'PLATFORM_OWNER' ||
+    user?.email === 'superadmin@onewayhr.in' ||
+    user?.email === 'admin@hrms-saas.com' ||
+    user?.email === 'owner@onewayhr.com';
+
+  const roleUpper = (user?.role || '').toUpperCase();
+  const isOrgAdmin =
+    isPlatformOwner ||
+    roleUpper === 'ORG_ADMIN' ||
+    roleUpper === 'ADMIN' ||
+    roleUpper === 'ORGANIZATION OWNER' ||
+    roleUpper === 'ORGANIZATION ADMIN' ||
+    roleUpper === 'OWNER' ||
+    Boolean(roleData?.isSystemAdmin) ||
+    roleData?.slug === 'system-admin';
+
+  // Can configure SaaS:
+  // 1. Platform Owner (SaaS Owner)
+  // 2. Organization Admin
+  // 3. Specific User granted canCustomizeSaas by Org Admin
+  // 4. Role granted settings permission by Org Admin
+  const canConfigSaas =
+    isPlatformOwner ||
+    isOrgAdmin ||
+    Boolean(user?.canCustomizeSaas) ||
+    hasPermission('settings', 'view');
+
+  const canCreate = hasPermission('settings', 'create') || hasPermission('roles', 'create');
+  const canEdit = hasPermission('settings', 'edit') || hasPermission('roles', 'edit');
+  const [activeTab, setActiveTab] = useState<'roles' | 'features' | 'users' | 'profile' | 'structure'>('features');
+
+  // Specific User Privileges state (Org Admin delegation)
+  const [tenantUsers, setTenantUsers] = useState<any[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+  const [userSearch, setUserSearch] = useState('');
 
   // Roles state
   const [roles, setRoles] = useState<CustomRoleItem[]>([]);
@@ -178,11 +219,90 @@ export default function SettingsPage() {
     }
   };
 
+  // 4. Fetch Tenant Users for specific delegation
+  const fetchTenantUsers = async () => {
+    setUsersLoading(true);
+    try {
+      const res = await fetch('/api/v1/settings/users');
+      const data = await res.json();
+      if (data.success) {
+        setTenantUsers(data.users || []);
+      }
+    } catch (e: any) {
+      console.error(e);
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
   useEffect(() => {
-    fetchRoles();
-    fetchFeatures();
-    fetchProfileAndStructures();
-  }, []);
+    if (canConfigSaas) {
+      fetchRoles();
+      fetchFeatures();
+      fetchProfileAndStructures();
+      fetchTenantUsers();
+    }
+  }, [canConfigSaas]);
+
+  // Handler for Organization Admin to toggle specific user SaaS Customization access
+  const handleToggleUserCustomSaas = async (targetUser: any) => {
+    setUpdatingUserId(targetUser._id);
+    try {
+      const nextVal = !targetUser.canCustomizeSaas;
+      const res = await fetch('/api/v1/settings/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: targetUser._id,
+          canCustomizeSaas: nextVal,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showMsg(
+          nextVal
+            ? `Granted SaaS Customization access to ${targetUser.name}`
+            : `Revoked SaaS Customization access from ${targetUser.name}`
+        );
+        setTenantUsers((prev) =>
+          prev.map((u) => (u._id === targetUser._id ? { ...u, canCustomizeSaas: nextVal } : u))
+        );
+      } else {
+        showMsg(data.error || 'Failed to update user privilege', 'error');
+      }
+    } catch (e: any) {
+      showMsg(e.message || 'Error updating user privilege', 'error');
+    } finally {
+      setUpdatingUserId(null);
+    }
+  };
+
+  // Handler for Organization Admin to reassign roles on the fly
+  const handleAssignUserRole = async (targetUserId: string, newRoleId: string) => {
+    setUpdatingUserId(targetUserId);
+    try {
+      const res = await fetch('/api/v1/settings/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: targetUserId,
+          roleId: newRoleId,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showMsg(`User role successfully reassigned!`);
+        await fetchTenantUsers();
+        await refreshSession();
+      } else {
+        showMsg(data.error || 'Failed to assign role', 'error');
+      }
+    } catch (e: any) {
+      showMsg(e.message || 'Error assigning role', 'error');
+    } finally {
+      setUpdatingUserId(null);
+    }
+  };
 
   // Save Role Handler
   const handleOpenRoleModal = (role?: CustomRoleItem) => {
@@ -388,6 +508,31 @@ export default function SettingsPage() {
     }
   };
 
+  if (!canConfigSaas) {
+    return (
+      <DashboardLayout>
+        <div className="p-8 sm:p-12 max-w-xl mx-auto my-12 text-center rounded-3xl bg-white border border-slate-200 shadow-md space-y-4">
+          <div className="w-16 h-16 rounded-3xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-black text-slate-900">Access Restricted: Organization Admin Only</h2>
+          <p className="text-xs text-slate-600 leading-relaxed font-medium">
+            SaaS feature customization, custom roles, and corporate structure are restricted to the <strong>Organization Administrator</strong> and <strong>SaaS Platform Owner</strong>.
+            Your role or account currently does not have delegation to customize SaaS.
+          </p>
+          <div className="pt-2">
+            <a
+              href="/dashboard"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm transition-all"
+            >
+              <span>Return to Dashboard</span>
+            </a>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout>
       {/* Top Banner */}
@@ -404,7 +549,7 @@ export default function SettingsPage() {
             <span>SaaS Customizer & Settings</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1 max-w-2xl font-medium">
-            Create completely custom roles with granular permission matrices, and toggle or rename modules for your organization.
+            Organization Admins can customize SaaS features, configure custom roles with granular permissions, and decide which specific users have SaaS customization privileges.
           </p>
         </div>
 
@@ -426,10 +571,11 @@ export default function SettingsPage() {
       {/* Tabs Navigation (HROne Clean Modern Pill Tabs) */}
       <div className="flex border-b border-slate-200/90 space-x-2 overflow-x-auto pb-2 text-xs font-bold">
         {[
-          { id: 'roles', label: '1. Custom Roles & Permissions', icon: Shield },
-          { id: 'features', label: '2. Modular Feature Toggles', icon: Sliders },
-          { id: 'profile', label: '3. Company & Statutory Info', icon: Building },
-          { id: 'structure', label: '4. Branches & Departments', icon: Layers },
+          { id: 'features', label: '1. Modular Feature Toggles', icon: Sliders },
+          { id: 'roles', label: '2. Custom Roles & Permissions', icon: Shield },
+          { id: 'users', label: '3. Specific User Privileges', icon: Users },
+          { id: 'profile', label: '4. Company & Statutory Info', icon: Building },
+          { id: 'structure', label: '5. Branches & Departments', icon: Layers },
         ].map((t) => {
           const Icon = t.icon;
           const isActive = activeTab === t.id;
@@ -463,13 +609,15 @@ export default function SettingsPage() {
                 Define dynamic custom roles tailored to your company hierarchy (e.g. &quot;Shift Supervisor&quot;, &quot;HR Lead&quot;, &quot;Finance Auditor&quot;).
               </p>
             </div>
-            <button
-              onClick={() => handleOpenRoleModal()}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 flex items-center gap-2 cursor-pointer transition-transform hover:scale-[1.02]"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create Custom Role</span>
-            </button>
+            {canCreate && (
+              <button
+                onClick={() => handleOpenRoleModal()}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 flex items-center gap-2 cursor-pointer transition-transform hover:scale-[1.02]"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create Custom Role</span>
+              </button>
+            )}
           </div>
 
           {/* Roles Table */}
@@ -541,14 +689,16 @@ export default function SettingsPage() {
                         </td>
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => handleOpenRoleModal(r)}
-                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 transition-all cursor-pointer"
-                              title="Edit permissions"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            {!r.isSystemAdmin && (
+                            {canEdit && (
+                              <button
+                                onClick={() => handleOpenRoleModal(r)}
+                                className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 transition-all cursor-pointer"
+                                title="Edit permissions"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {!r.isSystemAdmin && canEdit && (
                               <button
                                 onClick={() => handleDeleteRole(r)}
                                 className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-all cursor-pointer"
@@ -649,7 +799,188 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* TAB 3: COMPANY & STATUTORY CONFIG */}
+      {/* TAB 3: SPECIFIC USER PRIVILEGES (Organization Admin Delegation) */}
+      {activeTab === 'users' && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-orange-100 text-orange-700">
+                  Granular User Delegation
+                </span>
+                <span className="text-slate-300">•</span>
+                <span className="text-xs font-semibold text-slate-500">{tenantUsers.length} Organization Users</span>
+              </div>
+              <h2 className="text-base font-bold text-slate-900 mt-1 flex items-center gap-2">
+                <Users className="w-5 h-5 text-orange-600" />
+                <span>Specific User SaaS Customization Privileges</span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5 font-medium max-w-2xl">
+                Organization Admins can decide which specific users have the feature to customize SaaS settings & feature toggles, or reassign custom roles directly.
+              </p>
+            </div>
+
+            <div className="relative min-w-[240px]">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="Search user by name or email..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-medium focus:outline-none focus:bg-white focus:border-orange-500"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-white border border-slate-200/90 overflow-hidden shadow-xs">
+            {usersLoading ? (
+              <div className="py-16 text-center text-slate-400 text-xs">
+                <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-orange-500" />
+                Loading organization users and permissions...
+              </div>
+            ) : tenantUsers.length === 0 ? (
+              <div className="py-16 text-center text-slate-400 text-xs font-medium">
+                No users found for this organization.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-[10px] uppercase text-slate-600 font-bold border-b border-slate-200">
+                    <tr>
+                      <th className="py-3 px-4">User Details</th>
+                      <th className="py-3 px-4">Assigned Role</th>
+                      <th className="py-3 px-4 text-center">SaaS Customization Access</th>
+                      <th className="py-3 px-4 text-right">Admin Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {tenantUsers
+                      .filter(
+                        (u) =>
+                          u.name?.toLowerCase().includes(userSearch.toLowerCase()) ||
+                          u.email?.toLowerCase().includes(userSearch.toLowerCase())
+                      )
+                      .map((u) => {
+                        const isUserOrgAdmin =
+                          u.role === 'Admin' ||
+                          u.role === 'ORG_ADMIN' ||
+                          u.role === 'ORGANIZATION OWNER' ||
+                          u.roleId?.isSystemAdmin;
+
+                        const roleHasSettings =
+                          u.roleId?.permissions?.some(
+                            (p: any) =>
+                              (p.module === 'settings' || p.module === 'roles') &&
+                              (p.actions?.includes('view') || p.actions?.includes('edit'))
+                          ) ?? false;
+
+                        const isUpdating = updatingUserId === u._id;
+
+                        return (
+                          <tr key={u._id} className="hover:bg-slate-50/70 transition-colors">
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-700 font-bold text-xs flex items-center justify-center">
+                                  {u.name?.slice(0, 2).toUpperCase() || 'US'}
+                                </div>
+                                <div>
+                                  <div className="font-bold text-slate-900">{u.name}</div>
+                                  <div className="text-[11px] text-slate-500 font-mono">{u.email}</div>
+                                  {u.employeeId?.employeeCode && (
+                                    <span className="text-[10px] text-slate-400 font-medium">
+                                      Emp Code: {u.employeeId.employeeCode}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="py-3.5 px-4">
+                              <div className="flex flex-col gap-1 max-w-[200px]">
+                                <select
+                                  value={u.roleId?._id || ''}
+                                  onChange={(e) => handleAssignUserRole(u._id, e.target.value)}
+                                  disabled={isUpdating}
+                                  className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-900 font-semibold focus:outline-none focus:bg-white focus:border-orange-500"
+                                >
+                                  <option value="">{u.role || 'Assign Role'}</option>
+                                  {roles.map((r) => (
+                                    <option key={r._id} value={r._id}>
+                                      {r.name} {r.isSystemAdmin ? '(System Admin)' : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                                <span className="text-[10px] text-slate-400 font-medium">
+                                  Role: <strong className="text-slate-600">{u.role}</strong>
+                                </span>
+                              </div>
+                            </td>
+
+                            <td className="py-3.5 px-4 text-center">
+                              {isUserOrgAdmin ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                  <Shield className="w-3 h-3" />
+                                  Org Administrator (Full Access)
+                                </span>
+                              ) : roleHasSettings ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                  <Check className="w-3 h-3" />
+                                  Granted via Role ({u.role})
+                                </span>
+                              ) : u.canCustomizeSaas ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  Specific User Override (Granted)
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500">
+                                  <X className="w-3 h-3" />
+                                  No Customization Access
+                                </span>
+                              )}
+                            </td>
+
+                            <td className="py-3.5 px-4 text-right">
+                              {isUserOrgAdmin ? (
+                                <span className="text-[11px] text-slate-400 font-medium italic">
+                                  Org Admin Always Enabled
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleUserCustomSaas(u)}
+                                  disabled={isUpdating}
+                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs ${
+                                    u.canCustomizeSaas
+                                      ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                                      : 'bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100'
+                                  }`}
+                                >
+                                  {isUpdating ? (
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                  ) : u.canCustomizeSaas ? (
+                                    <X className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <Check className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>
+                                    {u.canCustomizeSaas ? 'Revoke SaaS Feature' : 'Enable SaaS Feature'}
+                                  </span>
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: COMPANY & STATUTORY CONFIG */}
       {activeTab === 'profile' && (
         <form onSubmit={handleSaveProfile} className="space-y-6">
           <div className="p-6 rounded-2xl bg-white border border-slate-200/90 shadow-xs space-y-4">
@@ -964,10 +1295,21 @@ export default function SettingsPage() {
                       <tbody className="divide-y divide-slate-100 bg-white">
                         {ALL_MODULE_KEYS.map((m) => {
                           const currentActions = roleFormPermissions[m.key] || [];
+                          const isSettingsKey = m.key === 'settings';
                           return (
-                            <tr key={m.key} className="hover:bg-slate-50/80">
+                            <tr key={m.key} className={isSettingsKey ? 'bg-orange-50/70 hover:bg-orange-100/50' : 'hover:bg-slate-50/80'}>
                               <td className="py-2 px-3 font-semibold text-slate-800">
-                                {m.label} <span className="text-[10px] text-slate-400 font-mono">({m.key})</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span>{m.label}</span>
+                                  {isSettingsKey && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-orange-200 text-orange-950 font-extrabold uppercase tracking-wide">
+                                      Customize SaaS
+                                    </span>
+                                  )}
+                                </div>
+                                <div className={`text-[10px] ${isSettingsKey ? 'text-orange-700 font-medium' : 'text-slate-400 font-mono'}`}>
+                                  {isSettingsKey ? 'Grants this role permission to customize SaaS features' : m.key}
+                                </div>
                               </td>
                               {PERMISSION_ACTIONS.map((action) => {
                                 const checked = currentActions.includes(action);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { Timesheet, Project } from '@/models/Operations';
+import { resolveOrganizationId, resolveEmployeeForSession } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,9 +12,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const query: any = { organizationId: session.organizationId };
-    if (session.role === 'EMPLOYEE' && session.employeeId) {
-      query.employeeId = session.employeeId;
+    const orgId = await resolveOrganizationId(session);
+    const query: any = { organizationId: orgId };
+    if (session.role === 'EMPLOYEE') {
+      const emp = await resolveEmployeeForSession(session, undefined, orgId);
+      if (emp) {
+        query.employeeId = emp._id;
+      }
     }
 
     const [timesheets, projects] = await Promise.all([
@@ -22,7 +27,7 @@ export async function GET(req: NextRequest) {
         .populate('projectId', 'name code')
         .sort({ date: -1 })
         .limit(100),
-      Project.find({ organizationId: session.organizationId, status: 'ACTIVE' }),
+      Project.find({ organizationId: orgId, status: 'ACTIVE' }),
     ]);
 
     return NextResponse.json({ success: true, timesheets, projects });
@@ -40,16 +45,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { projectId, date, hours, description, isBillable } = await req.json();
 
-    const targetEmployeeId = session.employeeId;
-    if (!targetEmployeeId) {
+    const emp = await resolveEmployeeForSession(session, undefined, orgId);
+    if (!emp) {
       return NextResponse.json({ success: false, error: 'Employee record required' }, { status: 400 });
     }
 
     const timesheet = await Timesheet.create({
-      organizationId: session.organizationId,
-      employeeId: targetEmployeeId,
+      organizationId: orgId,
+      employeeId: emp._id,
       projectId,
       date,
       hours: Number(hours),
@@ -73,10 +79,11 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { timesheetId, status } = await req.json();
 
     const timesheet = await Timesheet.findOneAndUpdate(
-      { _id: timesheetId, organizationId: session.organizationId },
+      { _id: timesheetId, organizationId: orgId },
       { $set: { status, reviewedBy: session.userId } },
       { new: true }
     );

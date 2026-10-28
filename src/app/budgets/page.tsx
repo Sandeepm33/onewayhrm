@@ -61,7 +61,10 @@ interface IRevision {
 }
 
 export default function BudgetsPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('budgets', 'create');
+  const canEdit = hasPermission('budgets', 'edit');
+  const canApprove = hasPermission('budgets', 'approve');
   const [budgets, setBudgets] = useState<IBudget[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
@@ -259,13 +262,15 @@ export default function BudgetsPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-transform hover:scale-[1.02] cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Create New Budget</span>
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => setModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-transform hover:scale-[1.02] cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create New Budget</span>
+          </button>
+        )}
       </div>
 
       {successMsg && (
@@ -480,12 +485,14 @@ export default function BudgetsPage() {
                     {new Date(b.startDate).toLocaleDateString('en-IN')} → {new Date(b.endDate).toLocaleDateString('en-IN')}
                   </span>
 
-                  <button
-                    onClick={() => handleOpenRevisionModal(b)}
-                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
-                  >
-                    Request Revision
-                  </button>
+                  {canEdit && (
+                    <button
+                      onClick={() => handleOpenRevisionModal(b)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
+                    >
+                      Request Revision
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -495,12 +502,14 @@ export default function BudgetsPage() {
             <div className="col-span-full py-16 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
               <PieChart className="w-10 h-10 mx-auto text-slate-300 mb-2" />
               <p className="text-xs font-semibold">No budget plans matching search criteria.</p>
-              <button
-                onClick={() => setModalOpen(true)}
-                className="mt-3 px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold cursor-pointer"
-              >
-                + Create Initial Budget
-              </button>
+              {canCreate && (
+                <button
+                  onClick={() => setModalOpen(true)}
+                  className="mt-3 px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold cursor-pointer"
+                >
+                  + Create Initial Budget
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -568,7 +577,7 @@ export default function BudgetsPage() {
                       </span>
                     </td>
                     <td className="py-3 px-4 text-right">
-                      {rev.status === 'PENDING' ? (
+                      {rev.status === 'PENDING' && canApprove ? (
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => handleReviewRevision(rev._id, 'APPROVED')}
@@ -584,7 +593,9 @@ export default function BudgetsPage() {
                           </button>
                         </div>
                       ) : (
-                        <span className="text-[10px] text-slate-400 font-medium">Decided</span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {rev.status === 'PENDING' ? 'Pending Review' : 'Decided'}
+                        </span>
                       )}
                     </td>
                   </tr>

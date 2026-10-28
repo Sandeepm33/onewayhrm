@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import { useAuth } from '@/context/AuthContext';
 import {
   Users2,
   Users,
@@ -57,6 +58,10 @@ interface ITeam {
 }
 
 export default function TeamsPage() {
+  const { hasPermission } = useAuth();
+  const canCreate = hasPermission('teams', 'create');
+  const canEdit = hasPermission('teams', 'edit');
+  const canDelete = hasPermission('teams', 'delete');
   const [teams, setTeams] = useState<ITeam[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [allEmployees, setAllEmployees] = useState<any[]>([]);
@@ -378,13 +383,15 @@ export default function TeamsPage() {
               <Layers className="w-3.5 h-3.5 text-emerald-600" />
               <span>Resource Matrix</span>
             </Link>
-            <button
-              onClick={handleOpenCreate}
-              className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/20 flex items-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02]"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create Team</span>
-            </button>
+            {canCreate && (
+              <button
+                onClick={handleOpenCreate}
+                className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/20 flex items-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02]"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create Team</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -498,20 +505,24 @@ export default function TeamsPage() {
                       </div>
 
                       <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handleOpenEdit(team)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-                          title="Edit Team"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTeam(team)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                          title="Delete Team"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {canEdit && (
+                          <button
+                            onClick={() => handleOpenEdit(team)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                            title="Edit Team"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button
+                            onClick={() => handleDeleteTeam(team)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            title="Delete Team"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
 

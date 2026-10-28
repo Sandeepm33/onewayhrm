@@ -1,17 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
+import { resolveOrganizationId } from '@/lib/tenant';
+import { canUserCustomizeSaas } from '@/lib/permissions';
 import { Organization, DEFAULT_SAAS_FEATURES, IOrgFeature } from '@/models/Organization';
 
 export async function GET(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const org = await Organization.findById(session.organizationId);
+    const orgId = await resolveOrganizationId(session);
+    if (!orgId) {
+      return NextResponse.json({ success: false, error: 'Organization context required' }, { status: 400 });
+    }
+
+    const org = await Organization.findById(orgId);
     if (!org) {
       return NextResponse.json({ success: false, error: 'Organization not found' }, { status: 404 });
     }
@@ -27,8 +34,21 @@ export async function PUT(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const canCustomize = await canUserCustomizeSaas(session);
+    if (!canCustomize) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Only Organization Admin or authorized users can customize SaaS features' },
+        { status: 403 }
+      );
+    }
+
+    const orgId = await resolveOrganizationId(session);
+    if (!orgId) {
+      return NextResponse.json({ success: false, error: 'Organization context required' }, { status: 400 });
     }
 
     const body = await req.json();
@@ -38,7 +58,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'features must be an array' }, { status: 400 });
     }
 
-    const org = await Organization.findById(session.organizationId);
+    const org = await Organization.findById(orgId);
     if (!org) {
       return NextResponse.json({ success: false, error: 'Organization not found' }, { status: 404 });
     }

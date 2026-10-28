@@ -8,6 +8,8 @@ import { Attendance } from '@/models/Attendance';
 import { LeaveBalance, LeaveRequest } from '@/models/Leave';
 import { Payslip } from '@/models/Payroll';
 import { Asset, AuditLog } from '@/models/Operations';
+import { resolveOrganizationId } from '@/lib/tenant';
+import { checkSessionPermission } from '@/lib/permissions';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -17,8 +19,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { id } = await params;
-    const employee = await Employee.findOne({ _id: id, organizationId: session.organizationId })
+    const employee = await Employee.findOne({ _id: id, organizationId: orgId })
       .populate('branchId')
       .populate('departmentId')
       .populate('designationId')
@@ -32,13 +35,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ success: false, error: 'Employee not found' }, { status: 404 });
     }
 
-    // Related data for profile tabs
+    // Related data for profile tabs strictly within tenant
     const [attendances, leaveBalance, leaveRequests, payslips, assets] = await Promise.all([
-      Attendance.find({ employeeId: employee._id }).sort({ date: -1 }).limit(10),
-      LeaveBalance.findOne({ employeeId: employee._id, year: new Date().getFullYear() }),
-      LeaveRequest.find({ employeeId: employee._id }).sort({ createdAt: -1 }),
-      Payslip.find({ employeeId: employee._id }).sort({ year: -1, month: -1 }),
-      Asset.find({ assignedToEmployeeId: employee._id }),
+      Attendance.find({ employeeId: employee._id, organizationId: orgId }).sort({ date: -1 }).limit(10),
+      LeaveBalance.findOne({ employeeId: employee._id, organizationId: orgId, year: new Date().getFullYear() }),
+      LeaveRequest.find({ employeeId: employee._id, organizationId: orgId }).sort({ createdAt: -1 }),
+      Payslip.find({ employeeId: employee._id, organizationId: orgId }).sort({ year: -1, month: -1 }),
+      Asset.find({ assignedToEmployeeId: employee._id, organizationId: orgId }),
     ]);
 
     return NextResponse.json({
@@ -64,6 +67,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const hasEdit = await checkSessionPermission(session, 'employees', 'edit');
+    if (!hasEdit) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Your role does not have permission to edit employees' },
+        { status: 403 }
+      );
+    }
+
+    const orgId = await resolveOrganizationId(session);
     const { id } = await params;
     const updates = await req.json();
 
@@ -101,7 +113,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const employee = await Employee.findOneAndUpdate(
-      { _id: id, organizationId: session.organizationId },
+      { _id: id, organizationId: orgId },
       { $set: updates },
       { new: true }
     );
@@ -112,7 +124,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // If roleId was updated, also update User's role and roleId
     if (updates.roleId && employee.userId) {
-      const assignedRole = await Role.findById(updates.roleId);
+      const assignedRole = await Role.findOne({ _id: updates.roleId, organizationId: orgId });
       if (assignedRole) {
         await User.findByIdAndUpdate(employee.userId, {
           roleId: assignedRole._id,
@@ -123,7 +135,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // Audit log
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: 'EMPLOYEE_UPDATED',

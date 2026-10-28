@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
+import { resolveOrganizationId } from '@/lib/tenant';
 import { ApprovalRequest } from '@/models/ApprovalWorkflow';
 import { AuditLog } from '@/models/Operations';
 import { LeaveRequest, LeaveBalance } from '@/models/Leave';
@@ -9,15 +10,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const orgId = await resolveOrganizationId(session);
+    if (!orgId) {
+      return NextResponse.json({ success: false, error: 'Organization context required' }, { status: 400 });
     }
 
     const { id } = await params;
     const body = await req.json();
     const { action, comments = '' } = body; // action: 'APPROVED' | 'REJECTED' | 'DELEGATED'
 
-    const request = await ApprovalRequest.findOne({ _id: id, organizationId: session.organizationId });
+    const request = await ApprovalRequest.findOne({ _id: id, organizationId: orgId });
     if (!request) {
       return NextResponse.json({ success: false, error: 'Approval request not found' }, { status: 404 });
     }
@@ -40,12 +46,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
       // If linked to a LeaveRequest, update LeaveRequest to REJECTED
       if (request.module === 'LEAVE' && request.entityId) {
-        await LeaveRequest.findByIdAndUpdate(request.entityId, {
-          status: 'REJECTED',
-          reviewedBy: session.userId,
-          reviewedAt: new Date(),
-          reviewerRemarks: comments || 'Rejected in approval workflow',
-        });
+        await LeaveRequest.findOneAndUpdate(
+          { _id: request.entityId, organizationId: orgId },
+          {
+            status: 'REJECTED',
+            reviewedBy: session.userId,
+            reviewedAt: new Date(),
+            reviewerRemarks: comments || 'Rejected in approval workflow',
+          }
+        );
       }
     } else if (action === 'APPROVED') {
       // Check if more steps remain in the chain
@@ -66,7 +75,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
         // If linked to a LeaveRequest, mark LeaveRequest APPROVED and deduct balance
         if (request.module === 'LEAVE' && request.entityId) {
-          const leave = await LeaveRequest.findById(request.entityId);
+          const leave = await LeaveRequest.findOne({ _id: request.entityId, organizationId: orgId });
           if (leave && leave.status !== 'APPROVED') {
             leave.status = 'APPROVED';
             leave.reviewedBy = session.userId as any;
@@ -77,7 +86,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
             // Deduct from employee leave balance
             const year = new Date(leave.startDate).getFullYear();
             const balance = await LeaveBalance.findOne({
-              organizationId: session.organizationId,
+              organizationId: orgId,
               employeeId: leave.employeeId,
               year,
             });
@@ -98,7 +107,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // Audit log
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: `APPROVAL_REQUEST_${action}`,

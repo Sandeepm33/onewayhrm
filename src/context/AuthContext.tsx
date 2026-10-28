@@ -26,6 +26,7 @@ export interface User {
   roleId?: string;
   organizationId?: string;
   employeeId?: string;
+  canCustomizeSaas?: boolean;
 }
 
 export interface OrgFeature {
@@ -229,9 +230,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Dynamic permission helper
   const hasPermission = (module: string, action: string = 'view'): boolean => {
     if (!user) return false;
-    // If user's role is a system admin, grant all permissions
-    if (roleData?.isSystemAdmin) return true;
-    if (!roleData || !roleData.permissions) return true; // Default fallback if no custom role attached
+    // Platform Owner, Super Admin, or explicit System Admin roles have unrestricted access
+    if (user.role === 'SUPER_ADMIN' || user.role === 'PLATFORM_OWNER' || roleData?.isSystemAdmin) {
+      return true;
+    }
+
+    // Special module check: settings (SaaS Settings / Customize SaaS)
+    // Strictly for Org Admin, or to others ONLY IF Org Admin gave access to that specific user or role
+    if (module === 'settings') {
+      // 1. Check if user is Organization Admin
+      const roleUpper = (user.role || '').toUpperCase();
+      if (
+        roleUpper === 'ORG_ADMIN' ||
+        roleUpper === 'ADMIN' ||
+        roleUpper === 'ORGANIZATION OWNER' ||
+        roleUpper === 'ORGANIZATION ADMIN' ||
+        roleUpper === 'OWNER'
+      ) {
+        return true;
+      }
+      // 2. Check if Org Admin explicitly enabled Customize SaaS for this specific user
+      if (user.canCustomizeSaas) {
+        return true;
+      }
+      // 3. Check if Org Admin enabled settings permission for this user's role
+      if (roleData?.permissions) {
+        const mod = roleData.permissions.find((p) => p.module === 'settings');
+        if (mod && mod.actions.includes(action as any)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (!roleData || !roleData.permissions || roleData.permissions.length === 0) {
+      // Safe default permissions for general staff members (NOT administrative privileges)
+      const defaultEmployeePermissions: Record<string, string[]> = {
+        dashboard: ['view'],
+        attendance: ['view', 'create'],
+        leave: ['view', 'create'],
+        timesheets: ['view', 'create'],
+        'self-service': ['view', 'create', 'edit'],
+        helpdesk: ['view', 'create'],
+        payslips: ['view'],
+        employees: ['view'],
+      };
+      return defaultEmployeePermissions[module]?.includes(action) ?? false;
+    }
 
     const modulePerm = roleData.permissions.find((p) => p.module === module);
     if (!modulePerm) return false;

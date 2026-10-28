@@ -13,6 +13,7 @@ export interface IUser extends Document {
   employeeId?: mongoose.Types.ObjectId;
   isActive: boolean;
   avatarUrl?: string;
+  canCustomizeSaas?: boolean;
   lastLogin?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -26,12 +27,13 @@ const UserSchema = new Schema<IUser>(
     phone: { type: String, trim: true },
     role: {
       type: String,
-      default: 'Admin',
+      default: 'EMPLOYEE',
       trim: true,
     },
     roleId: { type: Schema.Types.ObjectId, ref: 'Role' },
     organizationId: { type: Schema.Types.ObjectId, ref: 'Organization', index: true },
     employeeId: { type: Schema.Types.ObjectId, ref: 'Employee' },
+    canCustomizeSaas: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
     avatarUrl: { type: String },
     lastLogin: { type: Date },

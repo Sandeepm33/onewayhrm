@@ -3,20 +3,22 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { Role } from '@/models/Role';
 import { User } from '@/models/User';
+import { resolveOrganizationId } from '@/lib/tenant';
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { id } = await params;
     const body = await req.json();
     const { name, description, isSystemAdmin, permissions } = body;
 
-    const role = await Role.findOne({ _id: id, organizationId: session.organizationId });
+    const role = await Role.findOne({ _id: id, organizationId: orgId });
     if (!role) {
       return NextResponse.json({ success: false, error: 'Role not found' }, { status: 404 });
     }
@@ -38,7 +40,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // Also update any users that have this role name cached
     if (name) {
-      await User.updateMany({ roleId: role._id }, { role: role.name });
+      await User.updateMany({ roleId: role._id, organizationId: orgId }, { role: role.name });
     }
 
     return NextResponse.json({
@@ -55,12 +57,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { id } = await params;
-    const role = await Role.findOne({ _id: id, organizationId: session.organizationId });
+    const role = await Role.findOne({ _id: id, organizationId: orgId });
     if (!role) {
       return NextResponse.json({ success: false, error: 'Role not found' }, { status: 404 });
     }
@@ -68,7 +71,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     // Check if this is the only system admin role
     if (role.isSystemAdmin) {
       const adminRolesCount = await Role.countDocuments({
-        organizationId: session.organizationId,
+        organizationId: orgId,
         isSystemAdmin: true,
       });
       if (adminRolesCount <= 1) {
@@ -80,7 +83,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     }
 
     // Check if users are assigned to this role
-    const usersWithRole = await User.countDocuments({ roleId: role._id });
+    const usersWithRole = await User.countDocuments({ roleId: role._id, organizationId: orgId });
     if (usersWithRole > 0) {
       return NextResponse.json(
         {
@@ -91,7 +94,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       );
     }
 
-    await Role.deleteOne({ _id: id });
+    await Role.deleteOne({ _id: id, organizationId: orgId });
 
     return NextResponse.json({
       success: true,

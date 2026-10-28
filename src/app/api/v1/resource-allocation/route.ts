@@ -5,22 +5,24 @@ import { ProjectAllocation } from '@/models/ResourceAllocation';
 import { Project } from '@/models/Operations';
 import { Employee } from '@/models/Employee';
 import { Department } from '@/models/OrganizationStructure';
+import { resolveOrganizationId } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const [allocations, projects, employees] = await Promise.all([
-      ProjectAllocation.find({ organizationId: session.organizationId })
+      ProjectAllocation.find({ organizationId: orgId })
         .populate('projectId', 'name code clientName status')
         .populate('employeeId', 'firstName lastName employeeCode email departmentId roleId grossMonthly fullyLoadedMonthlyCost')
         .sort({ createdAt: -1 }),
-      Project.find({ organizationId: session.organizationId }).sort({ name: 1 }),
-      Employee.find({ organizationId: session.organizationId, status: 'ACTIVE' })
+      Project.find({ organizationId: orgId }).sort({ name: 1 }),
+      Employee.find({ organizationId: orgId, status: 'ACTIVE' })
         .populate('departmentId', 'name code')
         .populate('roleId', 'name slug')
         .sort({ firstName: 1 }),
@@ -84,10 +86,11 @@ export async function POST(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const body = await req.json();
     const {
       projectId,
@@ -109,9 +112,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check existing allocations for capacity validation
+    // Check existing allocations for capacity validation strictly within tenant
     const existingAllocations = await ProjectAllocation.find({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       employeeId,
       status: 'ACTIVE',
     });
@@ -122,7 +125,7 @@ export async function POST(req: NextRequest) {
     const isOverAllocated = newTotal > 100;
 
     const allocation = await ProjectAllocation.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       projectId,
       employeeId,
       roleInProject: roleInProject || 'Developer',
@@ -137,9 +140,10 @@ export async function POST(req: NextRequest) {
     });
 
     // Also ensure employee is in Project's assignedEmployees list
-    await Project.findByIdAndUpdate(projectId, {
-      $addToSet: { assignedEmployees: employeeId },
-    });
+    await Project.findOneAndUpdate(
+      { _id: projectId, organizationId: orgId },
+      { $addToSet: { assignedEmployees: employeeId } }
+    );
 
     return NextResponse.json({
       success: true,

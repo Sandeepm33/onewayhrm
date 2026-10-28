@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { Goal } from '@/models/Operations';
+import { resolveOrganizationId, resolveEmployeeForSession } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,9 +12,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const query: any = { organizationId: session.organizationId };
-    if (session.role === 'EMPLOYEE' && session.employeeId) {
-      query.employeeId = session.employeeId;
+    const orgId = await resolveOrganizationId(session);
+    const query: any = { organizationId: orgId };
+    if (session.role === 'EMPLOYEE') {
+      const emp = await resolveEmployeeForSession(session, undefined, orgId);
+      if (emp) {
+        query.employeeId = emp._id;
+      }
     }
 
     const goals = await Goal.find(query)
@@ -35,16 +40,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { employeeId, title, description, category, targetDate, weightage } = await req.json();
 
-    const targetEmp = employeeId || session.employeeId;
-    if (!targetEmp) {
-      return NextResponse.json({ success: false, error: 'Employee ID required' }, { status: 400 });
+    const emp = await resolveEmployeeForSession(session, employeeId, orgId);
+    if (!emp) {
+      return NextResponse.json({ success: false, error: 'Employee record required' }, { status: 400 });
     }
 
     const goal = await Goal.create({
-      organizationId: session.organizationId,
-      employeeId: targetEmp,
+      organizationId: orgId,
+      employeeId: emp._id,
       title,
       description,
       category: category || 'INDIVIDUAL',
@@ -69,6 +75,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { goalId, progressPercentage, status, managerRating, managerFeedback } = await req.json();
 
     const updates: any = {};
@@ -78,7 +85,7 @@ export async function PUT(req: NextRequest) {
     if (managerFeedback) updates.managerFeedback = managerFeedback;
 
     const goal = await Goal.findOneAndUpdate(
-      { _id: goalId, organizationId: session.organizationId },
+      { _id: goalId, organizationId: orgId },
       { $set: updates },
       { new: true }
     );

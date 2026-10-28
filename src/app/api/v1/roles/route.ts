@@ -3,16 +3,18 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { Role } from '@/models/Role';
 import { User } from '@/models/User';
+import { resolveOrganizationId } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    let roles = await Role.find({ organizationId: session.organizationId }).sort({ createdAt: 1 });
+    const orgId = await resolveOrganizationId(session);
+    let roles = await Role.find({ organizationId: orgId }).sort({ createdAt: 1 });
 
     // Auto-seed enterprise MNC default roles if none exist
     if (roles.length === 0) {
@@ -140,11 +142,11 @@ export async function GET(req: NextRequest) {
       await Role.insertMany(
         defaultRoles.map((r) => ({
           ...r,
-          organizationId: session.organizationId,
+          organizationId: orgId,
         }))
       );
 
-      roles = await Role.find({ organizationId: session.organizationId }).sort({ createdAt: 1 });
+      roles = await Role.find({ organizationId: orgId }).sort({ createdAt: 1 });
     }
 
     return NextResponse.json({ success: true, roles });
@@ -157,10 +159,11 @@ export async function POST(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const body = await req.json();
     const { name, description, isSystemAdmin = false, permissions = [] } = body;
 
@@ -176,7 +179,7 @@ export async function POST(req: NextRequest) {
 
     // Check if role name already exists in this organization
     const existingRole = await Role.findOne({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       $or: [{ name: name.trim() }, { slug }],
     });
 
@@ -188,7 +191,7 @@ export async function POST(req: NextRequest) {
     }
 
     const newRole = await Role.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       name: name.trim(),
       slug,
       description: description || '',

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { DocumentTemplate } from '@/models/DocumentManagement';
+import { resolveOrganizationId } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,7 +12,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const templates = await DocumentTemplate.find({ organizationId: session.organizationId }).sort({ createdAt: -1 });
+    const orgId = await resolveOrganizationId(session);
+    const templates = await DocumentTemplate.find({ organizationId: orgId }).sort({ createdAt: -1 });
 
     return NextResponse.json({ success: true, templates });
   } catch (error: any) {
@@ -28,6 +30,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { type, title, templateBody } = await req.json();
 
     if (!type || !title || !templateBody) {
@@ -35,7 +38,7 @@ export async function POST(req: NextRequest) {
     }
 
     const template = await DocumentTemplate.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       type,
       title,
       templateBody,

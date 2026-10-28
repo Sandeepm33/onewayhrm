@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import DashboardLayout from '@/components/layout/DashboardLayout';
+import { useAuth } from '@/context/AuthContext';
 import {
   Building2,
   Users,
@@ -51,6 +52,10 @@ interface IEmployee {
 }
 
 export default function DepartmentsPage() {
+  const { hasPermission } = useAuth();
+  const canCreate = hasPermission('departments', 'create');
+  const canEdit = hasPermission('departments', 'edit');
+  const canDelete = hasPermission('departments', 'delete');
   const [departments, setDepartments] = useState<IDepartment[]>([]);
   const [allEmployees, setAllEmployees] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
@@ -307,13 +312,15 @@ export default function DepartmentsPage() {
               <Users2 className="w-3.5 h-3.5 text-indigo-600" />
               <span>Teams & Squads</span>
             </Link>
-            <button
-              onClick={handleOpenCreate}
-              className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/20 flex items-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02]"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Department</span>
-            </button>
+            {canCreate && (
+              <button
+                onClick={handleOpenCreate}
+                className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/20 flex items-center gap-1.5 cursor-pointer transition-all hover:scale-[1.02]"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Department</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -432,20 +439,24 @@ export default function DepartmentsPage() {
                       </div>
 
                       <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => handleOpenEdit(dept)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-                          title="Edit Department"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(dept)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                          title="Delete Department"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {canEdit && (
+                          <button
+                            onClick={() => handleOpenEdit(dept)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                            title="Edit Department"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button
+                            onClick={() => handleDelete(dept)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            title="Delete Department"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
 

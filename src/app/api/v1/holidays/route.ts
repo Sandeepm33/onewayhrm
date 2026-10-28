@@ -40,11 +40,7 @@ export async function GET(req: NextRequest) {
     const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
 
     const query: any = {
-      $or: [
-        { organizationId: orgId },
-        { organizationId: null },
-        { organizationId: { $exists: false } },
-      ],
+      organizationId: orgId,
       year,
     };
 

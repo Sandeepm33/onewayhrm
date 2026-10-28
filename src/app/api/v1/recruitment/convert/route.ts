@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
+import { resolveOrganizationId } from '@/lib/tenant';
 import { Candidate, JobRequisition } from '@/models/Recruitment';
 import { Employee } from '@/models/Employee';
 import { LeaveBalance } from '@/models/Leave';
@@ -14,11 +15,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
+    if (!orgId) {
+      return NextResponse.json({ success: false, error: 'Organization context required' }, { status: 400 });
+    }
+
     const { candidateId, departmentId, designationId, branchId, joiningDate, ctcAnnual } = await req.json();
 
     const candidate = await Candidate.findOne({
       _id: candidateId,
-      organizationId: session.organizationId,
+      organizationId: orgId,
     });
 
     if (!candidate) {
@@ -32,7 +38,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const count = await Employee.countDocuments({ organizationId: session.organizationId });
+    const count = await Employee.countDocuments({ organizationId: orgId });
     const employeeCode = `EMP${String(count + 1).padStart(3, '0')}`;
 
     const annual = Number(ctcAnnual) || candidate.offerDetails?.offeredCtc || 600000;
@@ -43,7 +49,7 @@ export async function POST(req: NextRequest) {
     const specialAllowance = Math.max(0, grossMonthly - basicSalary - hra - conveyanceAllowance);
 
     const newEmployee = await Employee.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       employeeCode,
       firstName: candidate.firstName,
       lastName: candidate.lastName,
@@ -70,7 +76,7 @@ export async function POST(req: NextRequest) {
 
     // Default leave balances
     await LeaveBalance.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       employeeId: newEmployee._id,
       year: new Date().getFullYear(),
       casualLeave: { total: 12, used: 0 },
@@ -80,7 +86,7 @@ export async function POST(req: NextRequest) {
     });
 
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: 'CANDIDATE_CONVERTED_TO_EMPLOYEE',

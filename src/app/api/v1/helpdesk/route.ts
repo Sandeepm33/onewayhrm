@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { HelpdeskTicket } from '@/models/Operations';
+import { resolveOrganizationId, resolveEmployeeForSession } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,9 +12,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const query: any = { organizationId: session.organizationId };
-    if (session.role === 'EMPLOYEE' && session.employeeId) {
-      query.employeeId = session.employeeId;
+    const orgId = await resolveOrganizationId(session);
+    const query: any = { organizationId: orgId };
+    if (session.role === 'EMPLOYEE') {
+      const emp = await resolveEmployeeForSession(session, undefined, orgId);
+      if (emp) {
+        query.employeeId = emp._id;
+      }
     }
 
     const tickets = await HelpdeskTicket.find(query)
@@ -36,19 +41,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { category, priority, subject, description } = await req.json();
 
-    const targetEmployeeId = session.employeeId;
-    if (!targetEmployeeId) {
+    const emp = await resolveEmployeeForSession(session, undefined, orgId);
+    if (!emp) {
       return NextResponse.json({ success: false, error: 'Employee record required' }, { status: 400 });
     }
 
-    const count = await HelpdeskTicket.countDocuments({ organizationId: session.organizationId });
+    const count = await HelpdeskTicket.countDocuments({ organizationId: orgId });
     const ticketNumber = `TKT-${new Date().getFullYear()}-${String(count + 1).padStart(3, '0')}`;
 
     const ticket = await HelpdeskTicket.create({
-      organizationId: session.organizationId,
-      employeeId: targetEmployeeId,
+      organizationId: orgId,
+      employeeId: emp._id,
       ticketNumber,
       category: category || 'GENERAL_HR',
       priority: priority || 'MEDIUM',
@@ -72,6 +78,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { ticketId, status, resolutionNotes, assignedToUserId } = await req.json();
 
     const updates: any = {};
@@ -80,7 +87,7 @@ export async function PUT(req: NextRequest) {
     if (assignedToUserId) updates.assignedToUserId = assignedToUserId;
 
     const ticket = await HelpdeskTicket.findOneAndUpdate(
-      { _id: ticketId, organizationId: session.organizationId },
+      { _id: ticketId, organizationId: orgId },
       { $set: updates },
       { new: true }
     );

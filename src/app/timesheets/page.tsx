@@ -6,7 +6,9 @@ import { useAuth } from '@/context/AuthContext';
 import { Clock, Plus, CheckCircle2, Calendar, X, Check, Ban } from 'lucide-react';
 
 export default function TimesheetsPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('timesheets', 'create');
+  const canApprove = hasPermission('timesheets', 'approve');
   const [timesheets, setTimesheets] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,13 +107,15 @@ export default function TimesheetsPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-all cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Log Work Entry</span>
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => setModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Log Work Entry</span>
+          </button>
+        )}
       </div>
 
       {/* TABLE */}
@@ -155,7 +159,7 @@ export default function TimesheetsPage() {
                     </span>
                   </td>
                   <td className="py-3.5 px-4 text-right">
-                    {ts.status === 'SUBMITTED' && ['SUPER_ADMIN', 'ORG_ADMIN', 'MANAGER'].includes(user?.role || '') && (
+                    {ts.status === 'SUBMITTED' && canApprove && (
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => handleDecision(ts._id, 'APPROVED')}

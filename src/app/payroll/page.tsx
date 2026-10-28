@@ -20,7 +20,9 @@ import {
 } from 'lucide-react';
 
 export default function PayrollPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('payroll', 'create');
+  const canApprove = hasPermission('payroll', 'approve');
   const [runs, setRuns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [runModalOpen, setRunModalOpen] = useState(false);
@@ -123,13 +125,15 @@ export default function PayrollPage() {
             <Download className="w-4 h-4 text-orange-600" />
             <span>View All Payslips</span>
           </a>
-          <button
-            onClick={() => setRunModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-transform hover:scale-[1.02] cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Execute New Pay Run</span>
-          </button>
+          {canCreate && (
+            <button
+              onClick={() => setRunModalOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-transform hover:scale-[1.02] cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Execute New Pay Run</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -223,7 +227,7 @@ export default function PayrollPage() {
                   </td>
                   <td className="py-3.5 px-4 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      {run.status === 'VALIDATED' && (
+                      {run.status === 'VALIDATED' && canApprove && (
                         <button
                           onClick={() => handleAction(run._id, 'APPROVE')}
                           className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-xs cursor-pointer"
@@ -232,7 +236,7 @@ export default function PayrollPage() {
                           <span>Approve Run</span>
                         </button>
                       )}
-                      {run.status === 'APPROVED' && (
+                      {run.status === 'APPROVED' && canApprove && (
                         <button
                           onClick={() => handleAction(run._id, 'PAY_AND_PUBLISH')}
                           className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-xs cursor-pointer"

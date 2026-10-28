@@ -6,6 +6,7 @@ import { Organization } from '@/models/Organization';
 import { Employee } from '@/models/Employee';
 import { Candidate } from '@/models/Recruitment';
 import { AuditLog } from '@/models/Operations';
+import { resolveOrganizationId, resolveEmployeeForSession } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
@@ -15,14 +16,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { searchParams } = new URL(req.url);
     const documentType = searchParams.get('type');
     const employeeId = searchParams.get('employeeId');
 
-    const query: any = { organizationId: session.organizationId };
+    const query: any = { organizationId: orgId };
 
-    if (session.role === 'EMPLOYEE' && session.employeeId) {
-      query.employeeId = session.employeeId;
+    if (session.role === 'EMPLOYEE') {
+      const emp = await resolveEmployeeForSession(session, undefined, orgId);
+      if (emp) {
+        query.employeeId = emp._id;
+      }
     } else if (employeeId) {
       query.employeeId = employeeId;
     }
@@ -46,15 +51,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const body = await req.json();
     const { documentType, employeeId, candidateId, recipientName, recipientEmail, title, customContent } = body;
 
-    const org = await Organization.findById(session.organizationId);
+    const org = await Organization.findById(orgId);
     if (!org) {
       return NextResponse.json({ success: false, error: 'Organization not found' }, { status: 404 });
     }
 
-    const count = await IssuedDocument.countDocuments({ organizationId: session.organizationId });
+    const count = await IssuedDocument.countDocuments({ organizationId: orgId });
     const documentNumber = `DOC-${documentType.substring(0, 5)}-${new Date().getFullYear()}-${String(count + 1).padStart(3, '0')}`;
 
     let content = customContent;
@@ -67,7 +73,7 @@ export async function POST(req: NextRequest) {
     }
 
     const issuedDoc = await IssuedDocument.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       documentType,
       documentNumber,
       employeeId: employeeId || undefined,
@@ -82,7 +88,7 @@ export async function POST(req: NextRequest) {
     });
 
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: 'DOCUMENT_ISSUED',

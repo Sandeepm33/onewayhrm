@@ -3,21 +3,23 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { Team, TeamMembership } from '@/models/Workforce';
 import { Employee } from '@/models/Employee';
+import { resolveOrganizationId } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const teams = await Team.find({ organizationId: session.organizationId })
+    const orgId = await resolveOrganizationId(session);
+    const teams = await Team.find({ organizationId: orgId })
       .populate('departmentId', 'name code')
       .populate('teamLeadId', 'firstName lastName employeeCode email')
       .sort({ createdAt: -1 });
 
-    const memberships = await TeamMembership.find({ organizationId: session.organizationId, status: 'ACTIVE' })
+    const memberships = await TeamMembership.find({ organizationId: orgId, status: 'ACTIVE' })
       .populate('employeeId', 'firstName lastName employeeCode email roleId designationId')
       .populate('teamId', 'name code');
 
@@ -31,10 +33,11 @@ export async function POST(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const body = await req.json();
     const { name, code, departmentId, teamLeadId, description, memberEmployeeIds = [] } = body;
 
@@ -44,13 +47,13 @@ export async function POST(req: NextRequest) {
 
     const teamCode = (code || name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6)).toUpperCase();
 
-    const existing = await Team.findOne({ organizationId: session.organizationId, code: teamCode });
+    const existing = await Team.findOne({ organizationId: orgId, code: teamCode });
     if (existing) {
       return NextResponse.json({ success: false, error: `A team with code "${teamCode}" already exists.` }, { status: 409 });
     }
 
     const newTeam = await Team.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       name: name.trim(),
       code: teamCode,
       departmentId: departmentId || undefined,
@@ -62,7 +65,7 @@ export async function POST(req: NextRequest) {
     // Add team lead as LEAD membership
     if (teamLeadId) {
       await TeamMembership.create({
-        organizationId: session.organizationId,
+        organizationId: orgId,
         teamId: newTeam._id,
         employeeId: teamLeadId,
         roleInTeam: 'LEAD',
@@ -76,7 +79,7 @@ export async function POST(req: NextRequest) {
       const memberDocs = memberEmployeeIds
         .filter((id) => id !== teamLeadId)
         .map((empId) => ({
-          organizationId: session.organizationId,
+          organizationId: orgId,
           teamId: newTeam._id,
           employeeId: empId,
           roleInTeam: 'MEMBER',

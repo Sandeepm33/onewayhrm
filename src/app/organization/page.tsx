@@ -41,7 +41,9 @@ interface IEmployeeNode {
 }
 
 export default function OrganizationPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreateTeam = hasPermission('teams', 'create') || hasPermission('organization', 'create');
+  const canDelegate = hasPermission('organization', 'create') || hasPermission('approvals', 'create');
   const [activeTab, setActiveTab] = useState<'chart' | 'matrix' | 'teams' | 'departments' | 'delegations'>('chart');
   const [loading, setLoading] = useState(true);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -277,21 +279,25 @@ export default function OrganizationPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setDelegationModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-xs transition-colors cursor-pointer"
-          >
-            <Clock className="w-3.5 h-3.5 text-amber-600" />
-            <span>Delegate Authority</span>
-          </button>
+          {canDelegate && (
+            <button
+              onClick={() => setDelegationModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs shadow-xs transition-colors cursor-pointer"
+            >
+              <Clock className="w-3.5 h-3.5 text-amber-600" />
+              <span>Delegate Authority</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setTeamModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold text-xs shadow-md shadow-indigo-600/20 transition-transform hover:scale-[1.02] cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Create Team</span>
-          </button>
+          {canCreateTeam && (
+            <button
+              onClick={() => setTeamModalOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold text-xs shadow-md shadow-indigo-600/20 transition-transform hover:scale-[1.02] cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Team</span>
+            </button>
+          )}
         </div>
       </div>
 

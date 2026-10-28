@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { Asset } from '@/models/Operations';
+import { resolveOrganizationId, resolveEmployeeForSession } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,9 +12,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const query: any = { organizationId: session.organizationId };
-    if (session.role === 'EMPLOYEE' && session.employeeId) {
-      query.assignedToEmployeeId = session.employeeId;
+    const orgId = await resolveOrganizationId(session);
+    const query: any = { organizationId: orgId };
+    if (session.role === 'EMPLOYEE') {
+      const emp = await resolveEmployeeForSession(session, undefined, orgId);
+      if (emp) {
+        query.assignedToEmployeeId = emp._id;
+      }
     }
 
     const assets = await Asset.find(query)
@@ -35,13 +40,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { name, category, serialNumber, purchaseDate, purchaseCost, assignedToEmployeeId } = await req.json();
 
-    const count = await Asset.countDocuments({ organizationId: session.organizationId });
+    const count = await Asset.countDocuments({ organizationId: orgId });
     const assetCode = `AST-${category?.substring(0, 3) || 'GEN'}-${String(count + 1).padStart(3, '0')}`;
 
     const asset = await Asset.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       name,
       assetCode,
       category,
@@ -68,6 +74,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { assetId, assignedToEmployeeId, status, returnCondition } = await req.json();
 
     const updates: any = {};
@@ -80,7 +87,7 @@ export async function PUT(req: NextRequest) {
     if (returnCondition) updates.returnCondition = returnCondition;
 
     const asset = await Asset.findOneAndUpdate(
-      { _id: assetId, organizationId: session.organizationId },
+      { _id: assetId, organizationId: orgId },
       { $set: updates },
       { new: true }
     );

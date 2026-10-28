@@ -4,17 +4,19 @@ import { getSessionFromRequest } from '@/lib/auth';
 import { Team, TeamMembership } from '@/models/Workforce';
 import { ProjectAllocation } from '@/models/ResourceAllocation';
 import { AuditLog } from '@/models/Operations';
+import { resolveOrganizationId } from '@/lib/tenant';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { id } = await params;
-    const team = await Team.findOne({ _id: id, organizationId: session.organizationId })
+    const team = await Team.findOne({ _id: id, organizationId: orgId })
       .populate('departmentId', 'name code')
       .populate('teamLeadId', 'firstName lastName employeeCode email roleId designationId');
 
@@ -22,8 +24,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ success: false, error: 'Team not found' }, { status: 404 });
     }
 
-    // Fetch team memberships
-    const memberships = await TeamMembership.find({ teamId: id, status: 'ACTIVE' })
+    // Fetch team memberships strictly within tenant
+    const memberships = await TeamMembership.find({ teamId: id, organizationId: orgId, status: 'ACTIVE' })
       .populate({
         path: 'employeeId',
         select: 'firstName lastName employeeCode email roleId designationId fullyLoadedMonthlyCost',
@@ -36,7 +38,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     // Fetch project allocations for all team members
     const memberEmployeeIds = memberships.map((m) => m.employeeId?._id).filter(Boolean);
     const allocations = await ProjectAllocation.find({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       employeeId: { $in: memberEmployeeIds },
       status: 'ACTIVE',
     }).populate('projectId', 'name code clientName');
@@ -56,10 +58,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { id } = await params;
     const body = await req.json();
     const { name, code, departmentId, teamLeadId, description, status, memberEmployeeIds } = body;
@@ -78,7 +81,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const updatedTeam = await Team.findOneAndUpdate(
-      { _id: id, organizationId: session.organizationId },
+      { _id: id, organizationId: orgId },
       { $set: updates },
       { new: true }
     );
@@ -87,7 +90,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ success: false, error: 'Team not found' }, { status: 404 });
     }
 
-    // If memberEmployeeIds is provided, synchronize memberships
+    // If memberEmployeeIds is provided, synchronize memberships strictly within tenant
     if (Array.isArray(memberEmployeeIds)) {
       // Deactivate memberships not in the new list (except lead)
       const validEmployeeIds = memberEmployeeIds.filter((empId: string) => empId);
@@ -96,13 +99,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       }
 
       // Remove previous memberships
-      await TeamMembership.deleteMany({ teamId: id });
+      await TeamMembership.deleteMany({ teamId: id, organizationId: orgId });
 
       // Re-insert current members
       const newMembershipDocs = validEmployeeIds.map((empId: string) => {
         const isLead = updatedTeam.teamLeadId && String(updatedTeam.teamLeadId) === String(empId);
         return {
-          organizationId: session.organizationId,
+          organizationId: orgId,
           teamId: updatedTeam._id,
           employeeId: empId,
           roleInTeam: isLead ? 'LEAD' : 'MEMBER',
@@ -117,7 +120,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: 'TEAM_UPDATED',
@@ -140,15 +143,16 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { id } = await params;
 
     const deleted = await Team.findOneAndDelete({
       _id: id,
-      organizationId: session.organizationId,
+      organizationId: orgId,
     });
 
     if (!deleted) {
@@ -156,10 +160,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     }
 
     // Clean up memberships
-    await TeamMembership.deleteMany({ teamId: id });
+    await TeamMembership.deleteMany({ teamId: id, organizationId: orgId });
 
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: 'TEAM_DELETED',

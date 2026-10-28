@@ -6,7 +6,9 @@ import { useAuth } from '@/context/AuthContext';
 import { HelpCircle, Plus, CheckCircle2, MessageSquare, Clock, X, Check } from 'lucide-react';
 
 export default function HelpdeskPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('helpdesk', 'create');
+  const canEdit = hasPermission('helpdesk', 'edit');
   const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -91,13 +93,15 @@ export default function HelpdeskPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-all cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Raise Support Ticket</span>
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => setModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Raise Support Ticket</span>
+          </button>
+        )}
       </div>
 
       <div className="rounded-2xl bg-white border border-slate-200/90 overflow-hidden shadow-xs">
@@ -153,7 +157,7 @@ export default function HelpdeskPage() {
                     </span>
                   </td>
                   <td className="py-3.5 px-4 text-right">
-                    {t.status !== 'RESOLVED' && ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'PAYROLL_ADMIN'].includes(user?.role || '') && (
+                    {t.status !== 'RESOLVED' && canEdit && (
                       <button
                         onClick={() => handleStatus(t._id, 'RESOLVED')}
                         className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] inline-flex items-center gap-1 shadow-sm cursor-pointer"

@@ -17,8 +17,12 @@ import {
   Mail,
   Phone,
 } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 export default function RecruitmentPage() {
+  const { hasPermission } = useAuth();
+  const canCreate = hasPermission('recruitment', 'create');
+  const canEdit = hasPermission('recruitment', 'edit');
   const [jobs, setJobs] = useState<any[]>([]);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -149,15 +153,17 @@ export default function RecruitmentPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setJobModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Create Job Opening</span>
-          </button>
-        </div>
+        {canCreate && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setJobModalOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Job Opening</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {convertSuccess && (
@@ -227,17 +233,23 @@ export default function RecruitmentPage() {
                       </div>
                     </td>
                     <td className="py-3.5 px-4">
-                      <select
-                        value={cand.stage}
-                        onChange={(e) => handleStageChange(cand._id, e.target.value)}
-                        className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-orange-600 font-bold focus:outline-none focus:border-orange-500 focus:bg-white cursor-pointer"
-                      >
-                        {stages.map((stg) => (
-                          <option key={stg} value={stg} className="text-slate-800 font-medium">
-                            {stg}
-                          </option>
-                        ))}
-                      </select>
+                      {canEdit ? (
+                        <select
+                          value={cand.stage}
+                          onChange={(e) => handleStageChange(cand._id, e.target.value)}
+                          className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-orange-600 font-bold focus:outline-none focus:border-orange-500 focus:bg-white cursor-pointer"
+                        >
+                          {stages.map((stg) => (
+                            <option key={stg} value={stg} className="text-slate-800 font-medium">
+                              {stg}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-bold text-xs">
+                          {cand.stage}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-1 text-amber-500">
@@ -246,7 +258,7 @@ export default function RecruitmentPage() {
                       </div>
                     </td>
                     <td className="py-3.5 px-4 text-right">
-                      {cand.stage === 'OFFER' && !cand.convertedToEmployeeId && (
+                      {cand.stage === 'OFFER' && !cand.convertedToEmployeeId && canEdit && (
                         <button
                           onClick={() => setConvertCandidate(cand)}
                           className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-sm shadow-emerald-600/20 transition-all inline-flex items-center gap-1 cursor-pointer"

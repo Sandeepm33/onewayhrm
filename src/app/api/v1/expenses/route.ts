@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { ExpenseClaim } from '@/models/Operations';
+import { resolveOrganizationId, resolveEmployeeForSession } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,9 +12,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const query: any = { organizationId: session.organizationId };
-    if (session.role === 'EMPLOYEE' && session.employeeId) {
-      query.employeeId = session.employeeId;
+    const orgId = await resolveOrganizationId(session);
+    const query: any = { organizationId: orgId };
+    if (session.role === 'EMPLOYEE') {
+      const emp = await resolveEmployeeForSession(session, undefined, orgId);
+      if (emp) {
+        query.employeeId = emp._id;
+      }
     }
 
     const expenses = await ExpenseClaim.find(query)
@@ -36,19 +41,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { category, amount, expenseDate, description, receiptUrl } = await req.json();
 
-    const targetEmployeeId = session.employeeId;
-    if (!targetEmployeeId) {
+    const emp = await resolveEmployeeForSession(session, undefined, orgId);
+    if (!emp) {
       return NextResponse.json({ success: false, error: 'Employee record required' }, { status: 400 });
     }
 
-    const count = await ExpenseClaim.countDocuments({ organizationId: session.organizationId });
+    const count = await ExpenseClaim.countDocuments({ organizationId: orgId });
     const claimNumber = `EXP-${new Date().getFullYear()}-${String(count + 1).padStart(3, '0')}`;
 
     const claim = await ExpenseClaim.create({
-      organizationId: session.organizationId,
-      employeeId: targetEmployeeId,
+      organizationId: orgId,
+      employeeId: emp._id,
       claimNumber,
       category,
       amount: Number(amount),
@@ -73,10 +79,11 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { claimId, status } = await req.json();
 
     const claim = await ExpenseClaim.findOneAndUpdate(
-      { _id: claimId, organizationId: session.organizationId },
+      { _id: claimId, organizationId: orgId },
       {
         $set: {
           status,

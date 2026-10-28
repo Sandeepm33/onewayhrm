@@ -3,16 +3,18 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { ApprovalDelegation } from '@/models/Workforce';
 import { Employee } from '@/models/Employee';
+import { resolveOrganizationId } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const delegations = await ApprovalDelegation.find({ organizationId: session.organizationId })
+    const orgId = await resolveOrganizationId(session);
+    const delegations = await ApprovalDelegation.find({ organizationId: orgId })
       .populate('delegatorEmployeeId', 'firstName lastName employeeCode email')
       .populate('delegateeEmployeeId', 'firstName lastName employeeCode email')
       .sort({ createdAt: -1 });
@@ -27,10 +29,11 @@ export async function POST(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const body = await req.json();
     const { delegatorEmployeeId, delegateeEmployeeId, modules = ['LEAVE', 'TIMESHEET'], startDate, endDate, reason } = body;
 
@@ -43,7 +46,7 @@ export async function POST(req: NextRequest) {
     }
 
     const delegation = await ApprovalDelegation.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       delegatorEmployeeId,
       delegateeEmployeeId,
       modules,

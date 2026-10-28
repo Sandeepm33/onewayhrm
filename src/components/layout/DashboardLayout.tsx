@@ -19,6 +19,7 @@ import {
   BarChart3,
   Settings,
   ShieldCheck,
+  ShieldAlert,
   LogOut,
   Building2,
   ChevronDown,
@@ -72,7 +73,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
 
-  const isPlatformOwner = user?.role === 'SUPER_ADMIN' || user?.role === 'PLATFORM_OWNER';
+  const isPlatformOwner =
+    user?.role === 'SUPER_ADMIN' ||
+    user?.role === 'PLATFORM_OWNER' ||
+    user?.email === 'superadmin@onewayhr.in' ||
+    user?.email === 'admin@hrms-saas.com' ||
+    user?.email === 'owner@onewayhr.com';
+
+  const roleUpper = (user?.role || '').toUpperCase();
+  const isOrgAdmin =
+    isPlatformOwner ||
+    roleUpper === 'ORG_ADMIN' ||
+    roleUpper === 'ADMIN' ||
+    roleUpper === 'ORGANIZATION OWNER' ||
+    roleUpper === 'ORGANIZATION ADMIN' ||
+    roleUpper === 'OWNER' ||
+    Boolean(roleData?.isSystemAdmin) ||
+    roleData?.slug === 'system-admin';
+
+  // Can configure SaaS:
+  // 1. Platform Owner (SaaS Owner)
+  // 2. Organization Admin
+  // 3. Specific User explicitly granted by Organization Admin
+  // 4. Specific Role granted settings permission by Organization Admin
+  const canConfigSaas =
+    isPlatformOwner ||
+    isOrgAdmin ||
+    Boolean(user?.canCustomizeSaas) ||
+    hasPermission('settings', 'view');
 
   // If not authenticated, redirect to /login inside useEffect
   useEffect(() => {
@@ -96,7 +124,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return null;
   }
 
-  const userRole = user?.role || 'Admin';
+  const userRole = user?.role || 'Employee';
 
   // DYNAMIC FEATURE CUSTOMIZATION:
   const orgFeatures = organization?.features && organization.features.length > 0
@@ -105,13 +133,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const visibleNavItems = orgFeatures
     .filter((feat) => feat.enabled)
-    .filter((feat) => isPlatformOwner || hasPermission(feat.key, 'view'))
+    .filter((feat) => {
+      // SaaS Settings (key: 'settings') is strictly reserved for Organization Admin,
+      // or to others ONLY IF Org Admin gave access to that specific user or role
+      if (feat.key === 'settings') {
+        return canConfigSaas;
+      }
+      return isPlatformOwner || hasPermission(feat.key, 'view');
+    })
     .map((feat) => ({
       name: feat.name,
       href: feat.href || `/${feat.key}`,
       icon: ICON_MAP[feat.icon] || LayoutDashboard,
       key: feat.key,
-      badge: feat.key === 'payroll' ? 'India' : feat.key === 'settings' ? 'Custom' : undefined,
+      badge: feat.key === 'payroll' ? 'India' : feat.key === 'settings' ? 'Admin' : undefined,
     }));
 
   const finalNavItems = [
@@ -128,6 +163,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       : []),
     ...visibleNavItems,
   ];
+
+  const currentModule = pathname.replace(/^\//, '').split('/')[0];
+  const isProtectedModule = currentModule && currentModule !== 'dashboard' && currentModule !== 'self-service';
+  const hasAccessToCurrentPage =
+    currentModule === 'settings'
+      ? canConfigSaas
+      : (!isProtectedModule || isPlatformOwner || hasPermission(currentModule, 'view'));
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans antialiased selection:bg-orange-500 selection:text-white">
@@ -197,16 +239,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <PlusCircle className="w-3.5 h-3.5" />
               <span>Provision Organization</span>
             </a>
-          ) : (
+          ) : canConfigSaas ? (
             <a
               href="/settings"
-              title="Customize Roles & Features"
+              title="Customize Roles & Features (Org Admin / Authorized)"
               className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold border border-slate-200 shadow-xs transition-all cursor-pointer"
             >
               <Sliders className="w-3.5 h-3.5 text-orange-600" />
               <span>Customize SaaS</span>
             </a>
-          )}
+          ) : null}
 
           {/* Notifications */}
           <div className="relative">
@@ -352,7 +394,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* MAIN CANVAS (HROne Signature Soft Grey Canvas #f8fafc) */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-[#f8fafc]">
-          <div className="max-w-7xl mx-auto space-y-6">{children}</div>
+          <div className="max-w-7xl mx-auto space-y-6">
+            {!hasAccessToCurrentPage ? (
+              <div className="p-8 sm:p-12 max-w-xl mx-auto my-12 text-center rounded-3xl bg-white border border-slate-200 shadow-md space-y-4">
+                <div className="w-16 h-16 rounded-3xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
+                  <ShieldAlert className="w-8 h-8" />
+                </div>
+                <h2 className="text-xl font-black text-slate-900">Access Restricted</h2>
+                <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                  Your assigned role (<span className="font-bold text-slate-800">{roleData?.name || userRole}</span>) does not have permission to access the <span className="font-mono font-bold text-rose-600 uppercase">{currentModule}</span> module.
+                </p>
+                <div className="pt-2">
+                  <a
+                    href="/dashboard"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm transition-all"
+                  >
+                    <span>Return to Dashboard</span>
+                  </a>
+                </div>
+              </div>
+            ) : (
+              children
+            )}
+          </div>
         </main>
       </div>
     </div>

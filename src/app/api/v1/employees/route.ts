@@ -8,6 +8,9 @@ import { LeaveBalance } from '@/models/Leave';
 import { AuditLog } from '@/models/Operations';
 import { ReportingRelationship } from '@/models/Workforce';
 
+import { resolveOrganizationId } from '@/lib/tenant';
+import { checkSessionPermission } from '@/lib/permissions';
+
 export async function GET(req: NextRequest) {
   try {
     await connectToDatabase();
@@ -16,13 +19,20 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const hasView = await checkSessionPermission(session, 'employees', 'view');
+    if (!hasView) {
+      return NextResponse.json({ success: false, error: 'Forbidden: Access to Employee Directory is restricted for your role' }, { status: 403 });
+    }
+
+    const orgId = await resolveOrganizationId(session);
+
     const { searchParams } = new URL(req.url);
     const search = searchParams.get('search') || '';
     const departmentId = searchParams.get('departmentId');
     const branchId = searchParams.get('branchId');
     const status = searchParams.get('status');
 
-    const query: any = { organizationId: session.organizationId };
+    const query: any = { organizationId: orgId };
 
     if (departmentId) query.departmentId = departmentId;
     if (branchId) query.branchId = branchId;
@@ -63,6 +73,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const hasCreate = await checkSessionPermission(session, 'employees', 'create');
+    if (!hasCreate) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Your role does not have permission to onboard new employees' },
+        { status: 403 }
+      );
+    }
+
+    const orgId = await resolveOrganizationId(session);
     const body = await req.json();
     const {
       firstName,
@@ -98,21 +117,47 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Auto-generate next employeeCode if not provided
-    let employeeCode = body.employeeCode;
+    // Auto-generate next unique employeeCode if not provided
+    let employeeCode = body.employeeCode?.trim();
     if (!employeeCode) {
-      const count = await Employee.countDocuments({ organizationId: session.organizationId });
-      employeeCode = `EMP${String(count + 1).padStart(3, '0')}`;
+      const existingEmployees = await Employee.find({ organizationId: orgId }).select('employeeCode').lean();
+      let maxNum = 0;
+      for (const emp of existingEmployees) {
+        if (emp.employeeCode) {
+          const match = emp.employeeCode.match(/\d+/);
+          if (match) {
+            const num = parseInt(match[0], 10);
+            if (num > maxNum) maxNum = num;
+          }
+        }
+      }
+      let candidateNum = Math.max(maxNum + 1, existingEmployees.length + 1, 1);
+      let candidateCode = `EMP${String(candidateNum).padStart(3, '0')}`;
+      while (await Employee.findOne({ organizationId: orgId, employeeCode: candidateCode })) {
+        candidateNum++;
+        candidateCode = `EMP${String(candidateNum).padStart(3, '0')}`;
+      }
+      employeeCode = candidateCode;
+    } else {
+      const existingCode = await Employee.findOne({ organizationId: orgId, employeeCode });
+      if (existingCode) {
+        return NextResponse.json(
+          { success: false, error: `Employee code "${employeeCode}" is already in use in your organization.` },
+          { status: 400 }
+        );
+      }
     }
 
-    // Check duplicate email in this org
-    const existing = await Employee.findOne({
-      organizationId: session.organizationId,
-      $or: [{ email: email.toLowerCase() }, { employeeCode }],
+    const cleanEmail = email.toLowerCase().trim();
+
+    // Check duplicate email specifically
+    const existingEmail = await Employee.findOne({
+      organizationId: orgId,
+      email: cleanEmail,
     });
-    if (existing) {
+    if (existingEmail) {
       return NextResponse.json(
-        { success: false, error: 'An employee with this email or code already exists in your organization' },
+        { success: false, error: `An employee with email "${cleanEmail}" is already registered in your organization.` },
         { status: 400 }
       );
     }
@@ -129,15 +174,15 @@ export async function POST(req: NextRequest) {
     // Verify assigned role if provided
     let roleDoc = null;
     if (roleId) {
-      roleDoc = await Role.findOne({ _id: roleId, organizationId: session.organizationId });
+      roleDoc = await Role.findOne({ _id: roleId, organizationId: orgId });
     }
 
     const newEmployee = await Employee.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       employeeCode,
       firstName,
       lastName,
-      email: email.toLowerCase().trim(),
+      email: cleanEmail,
       phone: phone || '',
       gender: gender || 'MALE',
       joiningDate: new Date(joiningDate),
@@ -168,24 +213,39 @@ export async function POST(req: NextRequest) {
     // Optionally create user portal login
     if (createPortalAccount) {
       const pwdHash = await hashPassword(password || 'Welcome@123');
-      const newUser = await User.create({
-        organizationId: session.organizationId,
-        employeeId: newEmployee._id,
-        name: `${firstName} ${lastName}`,
-        email: email.toLowerCase().trim(),
-        passwordHash: pwdHash,
-        role: roleDoc ? roleDoc.name : 'EMPLOYEE',
-        roleId: roleDoc ? roleDoc._id : undefined,
-        isActive: true,
-      });
-      newEmployee.userId = newUser._id;
-      await newEmployee.save();
+      const existingUser = await User.findOne({ email: cleanEmail });
+      if (existingUser) {
+        existingUser.organizationId = orgId as any;
+        existingUser.employeeId = newEmployee._id as any;
+        existingUser.name = `${firstName} ${lastName}`;
+        if (roleDoc) {
+          existingUser.role = roleDoc.name;
+          existingUser.roleId = roleDoc._id as any;
+        }
+        existingUser.isActive = true;
+        await existingUser.save();
+        newEmployee.userId = existingUser._id as any;
+        await newEmployee.save();
+      } else {
+        const newUser = await User.create({
+          organizationId: orgId,
+          employeeId: newEmployee._id,
+          name: `${firstName} ${lastName}`,
+          email: cleanEmail,
+          passwordHash: pwdHash,
+          role: roleDoc ? roleDoc.name : 'EMPLOYEE',
+          roleId: roleDoc ? roleDoc._id : undefined,
+          isActive: true,
+        });
+        newEmployee.userId = newUser._id;
+        await newEmployee.save();
+      }
     }
 
     // Record initial reporting relationships for audit trail
     if (reportingManagerId) {
       await ReportingRelationship.create({
-        organizationId: session.organizationId,
+        organizationId: orgId,
         employeeId: newEmployee._id,
         managerEmployeeId: reportingManagerId,
         relationshipType: 'HR_REPORTING_MANAGER',
@@ -196,7 +256,7 @@ export async function POST(req: NextRequest) {
 
     if (technicalLeadId) {
       await ReportingRelationship.create({
-        organizationId: session.organizationId,
+        organizationId: orgId,
         employeeId: newEmployee._id,
         managerEmployeeId: technicalLeadId,
         relationshipType: 'TECHNICAL_LEAD',
@@ -207,7 +267,7 @@ export async function POST(req: NextRequest) {
 
     // Initialize leave balance for current year
     await LeaveBalance.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       employeeId: newEmployee._id,
       year: new Date().getFullYear(),
       casualLeave: { total: 12, used: 0 },
@@ -218,7 +278,7 @@ export async function POST(req: NextRequest) {
 
     // Audit log
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: 'EMPLOYEE_CREATED',

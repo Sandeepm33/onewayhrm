@@ -3,19 +3,21 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { Team, TeamMembership } from '@/models/Workforce';
 import { AuditLog } from '@/models/Operations';
+import { resolveOrganizationId } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { searchParams } = new URL(req.url);
     const departmentId = searchParams.get('departmentId');
 
-    const query: any = { organizationId: session.organizationId };
+    const query: any = { organizationId: orgId };
     if (departmentId) {
       query.departmentId = departmentId;
     }
@@ -26,7 +28,7 @@ export async function GET(req: NextRequest) {
       .sort({ name: 1 });
 
     const allMemberships = await TeamMembership.find({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       status: 'ACTIVE',
     })
       .populate({
@@ -72,10 +74,11 @@ export async function POST(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const body = await req.json();
     const { name, code, departmentId, teamLeadId, description, memberEmployeeIds = [] } = body;
 
@@ -85,13 +88,13 @@ export async function POST(req: NextRequest) {
 
     const teamCode = (code || name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6)).toUpperCase();
 
-    const existing = await Team.findOne({ organizationId: session.organizationId, code: teamCode });
+    const existing = await Team.findOne({ organizationId: orgId, code: teamCode });
     if (existing) {
       return NextResponse.json({ success: false, error: `Team code "${teamCode}" is already in use.` }, { status: 409 });
     }
 
     const newTeam = await Team.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       name: name.trim(),
       code: teamCode,
       departmentId: departmentId || undefined,
@@ -103,7 +106,7 @@ export async function POST(req: NextRequest) {
     // Add team lead as LEAD membership
     if (teamLeadId) {
       await TeamMembership.create({
-        organizationId: session.organizationId,
+        organizationId: orgId,
         teamId: newTeam._id,
         employeeId: teamLeadId,
         roleInTeam: 'LEAD',
@@ -117,7 +120,7 @@ export async function POST(req: NextRequest) {
       const memberDocs = memberEmployeeIds
         .filter((id: string) => id && id !== teamLeadId)
         .map((empId: string) => ({
-          organizationId: session.organizationId,
+          organizationId: orgId,
           teamId: newTeam._id,
           employeeId: empId,
           roleInTeam: 'MEMBER',
@@ -131,7 +134,7 @@ export async function POST(req: NextRequest) {
     }
 
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: 'TEAM_CREATED',

@@ -1,21 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
+import { resolveOrganizationId } from '@/lib/tenant';
 import { ProjectAllocation } from '@/models/ResourceAllocation';
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const orgId = await resolveOrganizationId(session);
+    if (!orgId) {
+      return NextResponse.json({ success: false, error: 'Organization context required' }, { status: 400 });
     }
 
     const { id } = await params;
     const body = await req.json();
 
     const allocation = await ProjectAllocation.findOneAndUpdate(
-      { _id: id, organizationId: session.organizationId },
+      { _id: id, organizationId: orgId },
       { $set: body },
       { new: true }
     );
@@ -34,14 +40,19 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const orgId = await resolveOrganizationId(session);
+    if (!orgId) {
+      return NextResponse.json({ success: false, error: 'Organization context required' }, { status: 400 });
     }
 
     const { id } = await params;
     const allocation = await ProjectAllocation.findOneAndDelete({
       _id: id,
-      organizationId: session.organizationId,
+      organizationId: orgId,
     });
 
     if (!allocation) {

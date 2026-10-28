@@ -3,6 +3,7 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { Candidate, JobRequisition } from '@/models/Recruitment';
 import { AuditLog } from '@/models/Operations';
+import { resolveOrganizationId } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
@@ -12,11 +13,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { searchParams } = new URL(req.url);
     const jobId = searchParams.get('jobId');
     const stage = searchParams.get('stage');
 
-    const query: any = { organizationId: session.organizationId };
+    const query: any = { organizationId: orgId };
     if (jobId) query.jobId = jobId;
     if (stage) query.stage = stage;
 
@@ -39,6 +41,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const body = await req.json();
     const {
       jobId,
@@ -62,7 +65,7 @@ export async function POST(req: NextRequest) {
     }
 
     const candidate = await Candidate.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       jobId,
       firstName,
       lastName,
@@ -91,11 +94,12 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { candidateId, stage, rating, offerDetails, interviewNote } = await req.json();
 
     const candidate = await Candidate.findOne({
       _id: candidateId,
-      organizationId: session.organizationId,
+      organizationId: orgId,
     });
 
     if (!candidate) {
@@ -117,7 +121,7 @@ export async function PATCH(req: NextRequest) {
     await candidate.save();
 
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: 'CANDIDATE_STAGE_UPDATED',

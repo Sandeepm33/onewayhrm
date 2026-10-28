@@ -65,7 +65,9 @@ interface IApprovalRequest {
 }
 
 export default function ApprovalsPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('approvals', 'create');
+  const canApprove = hasPermission('approvals', 'approve');
   const [requests, setRequests] = useState<IApprovalRequest[]>([]);
   const [workflows, setWorkflows] = useState<IWorkflow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -213,13 +215,15 @@ export default function ApprovalsPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => setWorkflowModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs shadow-md shadow-blue-600/20 transition-transform hover:scale-[1.02] cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Configure Workflow</span>
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => setWorkflowModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs shadow-md shadow-blue-600/20 transition-transform hover:scale-[1.02] cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Configure Workflow</span>
+          </button>
+        )}
       </div>
 
       {successMsg && (
@@ -417,7 +421,7 @@ export default function ApprovalsPage() {
 
                 {/* ACTION BUTTONS */}
                 <div className="flex items-center gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
-                  {isPending ? (
+                  {isPending && canApprove ? (
                     <>
                       <button
                         disabled={actionLoading}
@@ -439,6 +443,8 @@ export default function ApprovalsPage() {
                       className={`px-3 py-1 rounded-xl text-xs font-bold uppercase tracking-wider ${
                         req.status === 'APPROVED'
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : req.status === 'PENDING'
+                          ? 'bg-amber-50 text-amber-700 border border-amber-200'
                           : 'bg-rose-50 text-rose-700 border border-rose-200'
                       }`}
                     >

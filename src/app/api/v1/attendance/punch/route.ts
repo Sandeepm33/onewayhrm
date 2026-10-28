@@ -4,82 +4,7 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest } from '@/lib/auth';
 import { Attendance } from '@/models/Attendance';
 import { Employee } from '@/models/Employee';
-import { resolveOrganizationId } from '@/lib/tenant';
-
-// Helper to resolve employee record for session
-async function resolveEmployee(session: any, targetId?: string, orgId?: mongoose.Types.ObjectId) {
-  const finalOrgId = orgId || await resolveOrganizationId(session);
-
-  const roleUpper = (session.role || '').toUpperCase();
-  const isAdminOrManager = roleUpper.includes('ADMIN') || roleUpper.includes('MANAGER') || roleUpper.includes('SUPER') || roleUpper.includes('OWNER');
-
-  if (targetId && mongoose.Types.ObjectId.isValid(targetId) && isAdminOrManager) {
-    const targetEmp = await Employee.findById(targetId);
-    if (targetEmp) return targetEmp;
-  }
-
-  if (session.employeeId && mongoose.Types.ObjectId.isValid(session.employeeId)) {
-    const emp = await Employee.findById(session.employeeId);
-    if (emp) return emp;
-  }
-
-  // Look up by userId
-  if (session.userId && mongoose.Types.ObjectId.isValid(session.userId)) {
-    let emp = await Employee.findOne({ userId: session.userId });
-    if (emp) return emp;
-  }
-
-  // Look up by email in organization or globally
-  const cleanEmail = (session.email || '').toLowerCase().trim();
-  if (cleanEmail) {
-    let emp = await Employee.findOne({
-      email: cleanEmail,
-      organizationId: finalOrgId,
-    });
-    if (!emp) {
-      emp = await Employee.findOne({ email: cleanEmail });
-    }
-    if (emp) {
-      if (session.userId && mongoose.Types.ObjectId.isValid(session.userId) && !emp.userId) {
-        emp.userId = session.userId;
-        await emp.save();
-      }
-      return emp;
-    }
-  }
-
-  // Auto-provision an employee profile for this user/admin so punch never fails
-  const nameParts = (session.name || 'User Admin').split(' ');
-  const firstName = nameParts[0] || 'User';
-  const lastName = nameParts.slice(1).join(' ') || 'Admin';
-
-  const count = await Employee.countDocuments({ organizationId: finalOrgId });
-  const employeeCode = `EMP${String(count + 1).padStart(3, '0')}`;
-
-  const newEmp = await Employee.create({
-    organizationId: finalOrgId,
-    userId: (session.userId && mongoose.Types.ObjectId.isValid(session.userId)) ? session.userId : undefined,
-    employeeCode,
-    firstName,
-    lastName,
-    email: session.email,
-    phone: '9876543210',
-    gender: 'OTHER',
-    joiningDate: new Date(),
-    employmentType: 'FULL_TIME',
-    status: 'ACTIVE',
-    ctcAnnual: 1200000,
-    grossMonthly: 100000,
-    basicSalary: 50000,
-    hra: 25000,
-    specialAllowance: 25000,
-    conveyanceAllowance: 0,
-    medicalAllowance: 0,
-    bankDetails: {},
-  });
-
-  return newEmp;
-}
+import { resolveOrganizationId, resolveEmployeeForSession } from '@/lib/tenant';
 
 // Compute day status from record
 function determineDayStatus(record: any): 'NOT_CLOCKED_IN' | 'WORKING' | 'ON_BREAK' | 'CLOCKED_OUT' {
@@ -111,7 +36,7 @@ export async function GET(req: NextRequest) {
     const targetEmpId = searchParams.get('employeeId') || undefined;
 
     const orgId = await resolveOrganizationId(session);
-    const emp = await resolveEmployee(session, targetEmpId, orgId);
+    const emp = await resolveEmployeeForSession(session, targetEmpId, orgId);
     if (!emp) {
       return NextResponse.json({ success: false, error: 'Could not resolve employee' }, { status: 400 });
     }
@@ -156,7 +81,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({}));
     const orgId = await resolveOrganizationId(session);
-    const emp = await resolveEmployee(session, body.employeeId, orgId);
+    const emp = await resolveEmployeeForSession(session, body.employeeId, orgId);
     if (!emp) {
       return NextResponse.json(
         { success: false, error: 'No employee record linked to current user' },

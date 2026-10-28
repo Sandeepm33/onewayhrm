@@ -5,6 +5,7 @@ import { LeaveRequest, LeaveBalance } from '@/models/Leave';
 import { AuditLog } from '@/models/Operations';
 import { ApprovalRequest } from '@/models/ApprovalWorkflow';
 import { Employee } from '@/models/Employee';
+import { resolveOrganizationId, resolveEmployeeForSession } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
@@ -14,14 +15,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status');
     const employeeId = searchParams.get('employeeId');
 
-    const query: any = { organizationId: session.organizationId };
+    const query: any = { organizationId: orgId };
 
-    if (session.role === 'EMPLOYEE' && session.employeeId) {
-      query.employeeId = session.employeeId;
+    if (session.role === 'EMPLOYEE') {
+      const emp = await resolveEmployeeForSession(session, undefined, orgId);
+      if (emp) {
+        query.employeeId = emp._id;
+      }
     } else if (employeeId) {
       query.employeeId = employeeId;
     }
@@ -48,13 +53,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const body = await req.json();
     const { leaveType, startDate, endDate, totalDays, isHalfDay, halfDaySession, reason } = body;
 
-    const targetEmployeeId = body.employeeId || session.employeeId;
-    if (!targetEmployeeId) {
-      return NextResponse.json({ success: false, error: 'Target employee ID required' }, { status: 400 });
+    const emp = await resolveEmployeeForSession(session, body.employeeId, orgId);
+    if (!emp) {
+      return NextResponse.json({ success: false, error: 'Target employee record not found' }, { status: 400 });
     }
+    const targetEmployeeId = emp._id;
 
     if (!leaveType || !startDate || !endDate || !reason) {
       return NextResponse.json(
@@ -68,7 +75,7 @@ export async function POST(req: NextRequest) {
     // Check balance
     const currentYear = new Date(startDate).getFullYear();
     const balance = await LeaveBalance.findOne({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       employeeId: targetEmployeeId,
       year: currentYear,
     });
@@ -91,7 +98,7 @@ export async function POST(req: NextRequest) {
     }
 
     const newRequest = await LeaveRequest.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       employeeId: targetEmployeeId,
       leaveType,
       startDate,
@@ -105,7 +112,7 @@ export async function POST(req: NextRequest) {
 
     // Create corresponding ApprovalRequest routed through the employee's hierarchy
     try {
-      const requester = await Employee.findById(targetEmployeeId)
+      const requester = await Employee.findOne({ _id: targetEmployeeId, organizationId: orgId })
         .populate('reportingManagerId', 'firstName lastName employeeCode email')
         .populate('technicalLeadId', 'firstName lastName employeeCode email');
 
@@ -135,7 +142,7 @@ export async function POST(req: NextRequest) {
 
         const reqNum = `REQ-LV-${Date.now().toString().slice(-4)}`;
         await ApprovalRequest.create({
-          organizationId: session.organizationId,
+          organizationId: orgId,
           module: 'LEAVE',
           entityId: String(newRequest._id),
           requestNumber: reqNum,
@@ -186,7 +193,9 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!['ORG_ADMIN', 'HR_ADMIN', 'MANAGER'].includes(session.role)) {
+    const orgId = await resolveOrganizationId(session);
+
+    if (!['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'MANAGER'].includes(session.role)) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
@@ -198,7 +207,7 @@ export async function PUT(req: NextRequest) {
 
     const leave = await LeaveRequest.findOne({
       _id: requestId,
-      organizationId: session.organizationId,
+      organizationId: orgId,
     });
 
     if (!leave) {
@@ -216,7 +225,7 @@ export async function PUT(req: NextRequest) {
     if (status === 'APPROVED' && previousStatus !== 'APPROVED') {
       const year = new Date(leave.startDate).getFullYear();
       const balance = await LeaveBalance.findOne({
-        organizationId: session.organizationId,
+        organizationId: orgId,
         employeeId: leave.employeeId,
         year,
       });
@@ -232,7 +241,7 @@ export async function PUT(req: NextRequest) {
 
     // Synchronize linked ApprovalRequest if one exists
     try {
-      const appReq = await ApprovalRequest.findOne({ entityId: String(leave._id), module: 'LEAVE' });
+      const appReq = await ApprovalRequest.findOne({ entityId: String(leave._id), module: 'LEAVE', organizationId: orgId });
       if (appReq && appReq.status === 'PENDING') {
         appReq.status = status as any;
         appReq.stepHistory.push({
@@ -250,7 +259,7 @@ export async function PUT(req: NextRequest) {
     }
 
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: `LEAVE_REQUEST_${status}`,

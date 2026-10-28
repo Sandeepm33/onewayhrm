@@ -14,6 +14,7 @@ export interface UserSessionPayload {
   employeeId?: string;
   branchId?: string;
   departmentId?: string;
+  canCustomizeSaas?: boolean;
 }
 
 export function hashPassword(password: string): Promise<string> {

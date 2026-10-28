@@ -5,40 +5,42 @@ import { Employee } from '@/models/Employee';
 import { Department } from '@/models/OrganizationStructure';
 import { Team, TeamMembership, ReportingRelationship, ApprovalDelegation } from '@/models/Workforce';
 import { Role } from '@/models/Role';
+import { resolveOrganizationId } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const [employees, departments, teams, memberships, relationships, delegations, roles] = await Promise.all([
-      Employee.find({ organizationId: session.organizationId, status: { $ne: 'TERMINATED' } })
+      Employee.find({ organizationId: orgId, status: { $ne: 'TERMINATED' } })
         .populate('departmentId', 'name code parentDepartmentId')
         .populate('roleId', 'name slug isSystemAdmin')
         .populate('reportingManagerId', 'firstName lastName employeeCode email')
         .populate('technicalLeadId', 'firstName lastName employeeCode email')
         .sort({ firstName: 1 }),
-      Department.find({ organizationId: session.organizationId })
+      Department.find({ organizationId: orgId })
         .populate('headEmployeeId', 'firstName lastName employeeCode email')
         .populate('parentDepartmentId', 'name code'),
-      Team.find({ organizationId: session.organizationId })
+      Team.find({ organizationId: orgId })
         .populate('departmentId', 'name code')
         .populate('teamLeadId', 'firstName lastName employeeCode email'),
-      TeamMembership.find({ organizationId: session.organizationId, status: 'ACTIVE' })
+      TeamMembership.find({ organizationId: orgId, status: 'ACTIVE' })
         .populate('employeeId', 'firstName lastName employeeCode')
         .populate('teamId', 'name code'),
-      ReportingRelationship.find({ organizationId: session.organizationId })
+      ReportingRelationship.find({ organizationId: orgId })
         .populate('employeeId', 'firstName lastName employeeCode')
         .populate('managerEmployeeId', 'firstName lastName employeeCode')
         .sort({ effectiveStartDate: -1 }),
-      ApprovalDelegation.find({ organizationId: session.organizationId })
+      ApprovalDelegation.find({ organizationId: orgId })
         .populate('delegatorEmployeeId', 'firstName lastName employeeCode')
         .populate('delegateeEmployeeId', 'firstName lastName employeeCode')
         .sort({ createdAt: -1 }),
-      Role.find({ organizationId: session.organizationId }).sort({ createdAt: 1 }),
+      Role.find({ organizationId: orgId }).sort({ createdAt: 1 }),
     ]);
 
     // Build hierarchy tree: employees without reporting manager or whose manager is self/not in org are root nodes

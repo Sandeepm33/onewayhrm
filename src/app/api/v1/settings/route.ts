@@ -4,6 +4,8 @@ import { getSessionFromRequest } from '@/lib/auth';
 import { Organization } from '@/models/Organization';
 import { Branch, Department, Designation } from '@/models/OrganizationStructure';
 import { AuditLog } from '@/models/Operations';
+import { resolveOrganizationId } from '@/lib/tenant';
+import { canUserCustomizeSaas } from '@/lib/permissions';
 
 export async function GET(req: NextRequest) {
   try {
@@ -13,39 +15,48 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    let [organization, branches, departments, designations, auditLogs] = await Promise.all([
-      Organization.findById(session.organizationId),
-      Branch.find({ organizationId: session.organizationId }),
-      Department.find({ organizationId: session.organizationId }),
-      Designation.find({ organizationId: session.organizationId }),
-      AuditLog.find({ organizationId: session.organizationId }).sort({ createdAt: -1 }).limit(25),
-    ]);
-
-    // Auto-seed default MNC departments if none exist
-    if (departments.length === 0) {
-      const defaultDepts = [
-        { organizationId: session.organizationId, name: 'Engineering', code: 'ENG', description: 'Software engineering, QA and cloud infrastructure' },
-        { organizationId: session.organizationId, name: 'Product & Design', code: 'PROD', description: 'Product management, UX and technical architecture' },
-        { organizationId: session.organizationId, name: 'Human Resources', code: 'HR', description: 'Talent acquisition, employee lifecycle and payroll' },
-        { organizationId: session.organizationId, name: 'Finance & Operations', code: 'FIN', description: 'Budgets, financial controllership and resource allocations' },
-        { organizationId: session.organizationId, name: 'Sales & Delivery', code: 'SALES', description: 'Client deliveries, project management and business growth' },
-      ];
-      await Department.insertMany(defaultDepts);
-      departments = await Department.find({ organizationId: session.organizationId });
+    const canCustomize = await canUserCustomizeSaas(session);
+    if (!canCustomize) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Organization Admin or authorized access required' },
+        { status: 403 }
+      );
     }
 
-    // Auto-seed default MNC designations if none exist
+    const orgId = await resolveOrganizationId(session);
+    let [organization, branches, departments, designations, auditLogs] = await Promise.all([
+      Organization.findById(orgId),
+      Branch.find({ organizationId: orgId }),
+      Department.find({ organizationId: orgId }),
+      Designation.find({ organizationId: orgId }),
+      AuditLog.find({ organizationId: orgId }).sort({ createdAt: -1 }).limit(25),
+    ]);
+
+    // Auto-seed default MNC departments if none exist for this tenant
+    if (departments.length === 0) {
+      const defaultDepts = [
+        { organizationId: orgId, name: 'Engineering', code: 'ENG', description: 'Software engineering, QA and cloud infrastructure' },
+        { organizationId: orgId, name: 'Product & Design', code: 'PROD', description: 'Product management, UX and technical architecture' },
+        { organizationId: orgId, name: 'Human Resources', code: 'HR', description: 'Talent acquisition, employee lifecycle and payroll' },
+        { organizationId: orgId, name: 'Finance & Operations', code: 'FIN', description: 'Budgets, financial controllership and resource allocations' },
+        { organizationId: orgId, name: 'Sales & Delivery', code: 'SALES', description: 'Client deliveries, project management and business growth' },
+      ];
+      await Department.insertMany(defaultDepts);
+      departments = await Department.find({ organizationId: orgId });
+    }
+
+    // Auto-seed default MNC designations if none exist for this tenant
     if (designations.length === 0) {
       const defaultDesigs = [
-        { organizationId: session.organizationId, title: 'Engineering Manager', code: 'ENG-MGR', grade: 'L5' },
-        { organizationId: session.organizationId, title: 'Technical Lead', code: 'TECH-LEAD', grade: 'L4' },
-        { organizationId: session.organizationId, title: 'Senior Software Engineer', code: 'SR-DEV', grade: 'L3' },
-        { organizationId: session.organizationId, title: 'Software Engineer', code: 'DEV', grade: 'L2' },
-        { organizationId: session.organizationId, title: 'QA Automation Engineer', code: 'QA-ENG', grade: 'L2' },
-        { organizationId: session.organizationId, title: 'HR Manager', code: 'HR-MGR', grade: 'L4' },
+        { organizationId: orgId, title: 'Engineering Manager', code: 'ENG-MGR', grade: 'L5' },
+        { organizationId: orgId, title: 'Technical Lead', code: 'TECH-LEAD', grade: 'L4' },
+        { organizationId: orgId, title: 'Senior Software Engineer', code: 'SR-DEV', grade: 'L3' },
+        { organizationId: orgId, title: 'Software Engineer', code: 'DEV', grade: 'L2' },
+        { organizationId: orgId, title: 'QA Automation Engineer', code: 'QA-ENG', grade: 'L2' },
+        { organizationId: orgId, title: 'HR Manager', code: 'HR-MGR', grade: 'L4' },
       ];
       await Designation.insertMany(defaultDesigs);
-      designations = await Designation.find({ organizationId: session.organizationId });
+      designations = await Designation.find({ organizationId: orgId });
     }
 
     return NextResponse.json({
@@ -70,14 +81,16 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!['SUPER_ADMIN', 'ORG_ADMIN'].includes(session.role)) {
-      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    const canCustomize = await canUserCustomizeSaas(session);
+    if (!canCustomize) {
+      return NextResponse.json({ success: false, error: 'Forbidden: Access restricted to Organization Admin or authorized users' }, { status: 403 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const { name, contactEmail, contactPhone, address, statutoryConfig, workWeek } = await req.json();
 
     const organization = await Organization.findByIdAndUpdate(
-      session.organizationId,
+      orgId,
       {
         $set: {
           name,
@@ -92,7 +105,7 @@ export async function PUT(req: NextRequest) {
     );
 
     await AuditLog.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       userId: session.userId,
       userName: session.name,
       action: 'ORGANIZATION_SETTINGS_UPDATED',
@@ -108,7 +121,7 @@ export async function PUT(req: NextRequest) {
   }
 }
 
-// Add branch/dept/designation
+// Add branch/dept/designation strictly within tenant
 export async function POST(req: NextRequest) {
   try {
     await connectToDatabase();
@@ -117,23 +130,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const canCustomize = await canUserCustomizeSaas(session);
+    if (!canCustomize) {
+      return NextResponse.json({ success: false, error: 'Forbidden: Access restricted to Organization Admin or authorized users' }, { status: 403 });
+    }
+
+    const orgId = await resolveOrganizationId(session);
     const { type, data } = await req.json();
 
     if (type === 'BRANCH') {
       const branch = await Branch.create({
-        organizationId: session.organizationId,
+        organizationId: orgId,
         ...data,
       });
       return NextResponse.json({ success: true, branch });
     } else if (type === 'DEPARTMENT') {
       const department = await Department.create({
-        organizationId: session.organizationId,
+        organizationId: orgId,
         ...data,
       });
       return NextResponse.json({ success: true, department });
     } else if (type === 'DESIGNATION') {
       const designation = await Designation.create({
-        organizationId: session.organizationId,
+        organizationId: orgId,
         ...data,
       });
       return NextResponse.json({ success: true, designation });

@@ -6,26 +6,28 @@ import { Project } from '@/models/Operations';
 import { Department } from '@/models/OrganizationStructure';
 import { ProjectAllocation } from '@/models/ResourceAllocation';
 import { Employee } from '@/models/Employee';
+import { resolveOrganizationId } from '@/lib/tenant';
 
 export async function GET(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const orgId = await resolveOrganizationId(session);
     const [budgets, projects, departments, allocations, revisions] = await Promise.all([
-      Budget.find({ organizationId: session.organizationId })
+      Budget.find({ organizationId: orgId })
         .populate('departmentId', 'name code')
         .populate('projectId', 'name code clientName')
         .populate('approvedByUserId', 'name email')
         .sort({ createdAt: -1 }),
-      Project.find({ organizationId: session.organizationId }).sort({ name: 1 }),
-      Department.find({ organizationId: session.organizationId }).sort({ name: 1 }),
-      ProjectAllocation.find({ organizationId: session.organizationId, status: 'ACTIVE' })
+      Project.find({ organizationId: orgId }).sort({ name: 1 }),
+      Department.find({ organizationId: orgId }).sort({ name: 1 }),
+      ProjectAllocation.find({ organizationId: orgId, status: 'ACTIVE' })
         .populate('employeeId', 'firstName lastName grossMonthly fullyLoadedMonthlyCost ctcAnnual'),
-      BudgetRevision.find({ organizationId: session.organizationId })
+      BudgetRevision.find({ organizationId: orgId })
         .populate('requestedByUserId', 'name email')
         .populate('budgetId', 'name budgetCode')
         .sort({ createdAt: -1 }),
@@ -82,8 +84,13 @@ export async function POST(req: NextRequest) {
   try {
     await connectToDatabase();
     const session = getSessionFromRequest(req);
-    if (!session || !session.organizationId) {
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const orgId = await resolveOrganizationId(session);
+    if (!orgId) {
+      return NextResponse.json({ success: false, error: 'Organization context required' }, { status: 400 });
     }
 
     const body = await req.json();
@@ -113,7 +120,7 @@ export async function POST(req: NextRequest) {
     const code = (budgetCode || `BDG-${Date.now().toString().slice(-5)}`).toUpperCase();
 
     const newBudget = await Budget.create({
-      organizationId: session.organizationId,
+      organizationId: orgId,
       name: name.trim(),
       budgetCode: code,
       budgetType,

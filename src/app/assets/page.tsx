@@ -6,7 +6,9 @@ import { useAuth } from '@/context/AuthContext';
 import { Laptop, Plus, CheckCircle2, UserCheck, X } from 'lucide-react';
 
 export default function AssetsPage() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
+  const canCreate = hasPermission('assets', 'create');
+  const canEdit = hasPermission('assets', 'edit');
   const [assets, setAssets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -91,13 +93,15 @@ export default function AssetsPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-all cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Asset to Register</span>
-        </button>
+        {canCreate && (
+          <button
+            onClick={() => setModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Asset to Register</span>
+          </button>
+        )}
       </div>
 
       <div className="rounded-2xl bg-white border border-slate-200/90 overflow-hidden shadow-xs">
@@ -149,7 +153,7 @@ export default function AssetsPage() {
                     </span>
                   </td>
                   <td className="py-3.5 px-4 text-right">
-                    {ast.status === 'ASSIGNED' && (
+                    {ast.status === 'ASSIGNED' && canEdit && (
                       <button
                         onClick={() => handleReturn(ast._id)}
                         className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer transition-colors"
