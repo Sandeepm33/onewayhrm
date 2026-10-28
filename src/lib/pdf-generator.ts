@@ -81,7 +81,10 @@ export function generatePayslipPDF(data: PayslipPDFData): jsPDF {
   doc.setFont('helvetica', 'normal');
   doc.text(data.panNumber || 'N/A', 145, 46);
   doc.text(data.uanNumber || 'N/A', 145, 53);
-  doc.text(`${data.bankName || 'HDFC'} - ${data.accountNumber ? '...' + data.accountNumber.slice(-4) : 'Direct Transfer'}`, 145, 60);
+  const bankDisplay = data.bankName
+    ? `${data.bankName}${data.accountNumber ? ` (...${data.accountNumber.slice(-4)})` : ''}`
+    : 'Direct Transfer';
+  doc.text(bankDisplay, 145, 60);
   doc.text(`${data.payableDays} Days (Present: ${data.presentDays})`, 145, 67);
 
   // Table Headers

@@ -78,19 +78,20 @@ export default function SelfServicePage() {
     const monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     const monthYear = `${monthNames[slip.month]} ${slip.year}`;
 
+    const empName = `${slip.employeeId?.firstName || ''} ${slip.employeeId?.lastName || ''}`.trim() || 'Employee';
     const pdfDoc = generatePayslipPDF({
-      companyName: organization?.name || 'TechCorp Solutions India Pvt Ltd',
-      companyAddress: organization?.address?.line1 ? `${organization.address.line1}, ${organization.address.city}, India` : undefined,
+      companyName: organization?.name || 'Organization Payroll',
+      companyAddress: organization?.address?.line1 ? `${organization.address.line1}, ${organization.address.city || ''}` : undefined,
       payslipNumber: slip.payslipNumber,
       monthYear,
-      employeeName: `${slip.employeeId?.firstName} ${slip.employeeId?.lastName}`,
-      employeeCode: slip.employeeId?.employeeCode || 'EMP',
-      designation: slip.employeeId?.designationId?.title || 'Engineer',
-      department: slip.employeeId?.departmentId?.name || 'Engineering',
-      panNumber: slip.employeeId?.panNumber || 'N/A',
-      uanNumber: slip.employeeId?.uanNumber || 'N/A',
-      bankName: slip.employeeId?.bankDetails?.bankName || 'HDFC Bank',
-      accountNumber: slip.employeeId?.bankDetails?.accountNumber || 'Direct Transfer',
+      employeeName: empName,
+      employeeCode: slip.employeeId?.employeeCode || '-',
+      designation: slip.employeeId?.designationId?.title || '-',
+      department: slip.employeeId?.departmentId?.name || '-',
+      panNumber: slip.employeeId?.panNumber || '-',
+      uanNumber: slip.employeeId?.uanNumber || '-',
+      bankName: slip.employeeId?.bankDetails?.bankName || 'Direct Transfer',
+      accountNumber: slip.employeeId?.bankDetails?.accountNumber || '-',
       payableDays: slip.payableDays || 30,
       presentDays: slip.presentDays || 22,
       leaveDays: slip.leaveDays || 0,

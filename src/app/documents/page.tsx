@@ -57,7 +57,7 @@ export default function DocumentsPage() {
     e.preventDefault();
     try {
       const customContent = `REF: OFFICIAL LETTER\nDATE: ${new Date().toLocaleDateString('en-IN')}\n\nTO: ${form.recipientName}\nEMAIL: ${form.recipientEmail}\n\n` +
-        `Subject: ${form.title} - ${form.designation}\n\nWe are pleased to issue this official ${form.documentType.replace(/_/g, ' ')} for the position of ${form.designation} at ${organization?.name || 'TechCorp Solutions India Pvt Ltd'}.\n` +
+        `Subject: ${form.title} - ${form.designation}\n\nWe are pleased to issue this official ${form.documentType.replace(/_/g, ' ')} for the position of ${form.designation} at ${organization?.name || 'Company Organization'}.\n` +
         `Cost to Company (CTC): INR ${Number(form.ctcAnnual).toLocaleString('en-IN')} per annum.\nLocation: ${form.branchCity}, India.\n\n` +
         `Issued by Human Resources & People Operations.`;
 
@@ -85,7 +85,7 @@ export default function DocumentsPage() {
 
   const handleDownloadPDF = (docItem: any) => {
     const pdf = generateOfferLetterPDF(
-      organization?.name || 'TechCorp Solutions India Pvt Ltd',
+      organization?.name || 'Company Organization',
       docItem.recipientName,
       docItem.title || 'Official Role',
       1500000,

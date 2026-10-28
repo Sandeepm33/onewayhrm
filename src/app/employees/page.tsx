@@ -683,7 +683,7 @@ export default function EmployeesPage() {
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium focus:outline-none focus:bg-white focus:border-orange-500"
-                    placeholder="sandeep.reddy@techcorp.in"
+                    placeholder="employee@company.com"
                   />
                 </div>
                 <div>

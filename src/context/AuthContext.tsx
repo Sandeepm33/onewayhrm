@@ -26,6 +26,7 @@ export interface User {
   roleId?: string;
   organizationId?: string;
   employeeId?: string;
+  phone?: string;
   canCustomizeSaas?: boolean;
 }
 

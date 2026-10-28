@@ -38,11 +38,13 @@ import {
   PieChart,
   CheckSquare,
   Users2,
+  User,
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, any> = {
   LayoutDashboard,
   Users,
+  User,
   UserCheck,
   CalendarDays,
   CreditCard,
@@ -72,6 +74,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, roleData, organization, logout, hasPermission, loading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const isPlatformOwner =
     user?.role === 'SUPER_ADMIN' ||
@@ -162,10 +165,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         ]
       : []),
     ...visibleNavItems,
+    {
+      name: 'My Profile',
+      href: '/profile',
+      icon: User,
+      key: 'profile',
+      badge: 'Account',
+    },
   ];
 
   const currentModule = pathname.replace(/^\//, '').split('/')[0];
-  const isProtectedModule = currentModule && currentModule !== 'dashboard' && currentModule !== 'self-service';
+  const isProtectedModule =
+    currentModule &&
+    currentModule !== 'dashboard' &&
+    currentModule !== 'self-service' &&
+    currentModule !== 'profile';
   const hasAccessToCurrentPage =
     currentModule === 'settings'
       ? canConfigSaas
@@ -276,22 +290,77 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             )}
           </div>
 
-          {/* User Profile & Logout */}
-          <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-orange-500 flex items-center justify-center text-xs font-bold text-white uppercase shadow-sm">
-              {user?.name?.slice(0, 2) || 'OW'}
-            </div>
-            <div className="hidden sm:block text-left">
-              <p className="text-xs font-bold text-slate-900 truncate max-w-[130px]">{user?.name}</p>
-              <p className="text-[10px] text-slate-500 truncate max-w-[130px] font-medium">{user?.email}</p>
-            </div>
+          {/* User Profile & Interactive Menu Dropdown */}
+          <div className="relative">
             <button
-              onClick={logout}
-              title="Sign Out"
-              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 ml-1 transition-colors cursor-pointer"
+              onClick={() => setUserMenuOpen(!userMenuOpen)}
+              className="flex items-center gap-2 pl-2 border-l border-slate-200 hover:bg-slate-50 p-1 rounded-2xl transition-all cursor-pointer text-left"
             >
-              <LogOut className="w-4 h-4" />
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-orange-500 flex items-center justify-center text-xs font-bold text-white uppercase shadow-sm">
+                {user?.name?.slice(0, 2) || 'OW'}
+              </div>
+              <div className="hidden sm:block">
+                <p className="text-xs font-bold text-slate-900 truncate max-w-[120px] leading-tight">{user?.name}</p>
+                <p className="text-[10px] text-slate-500 truncate max-w-[120px] font-medium leading-tight">{user?.role || 'Member'}</p>
+              </div>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden sm:block" />
             </button>
+
+            {userMenuOpen && (
+              <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-white border border-slate-200 shadow-2xl p-2 z-50 text-slate-900">
+                <div className="p-3 border-b border-slate-100 mb-1.5 bg-slate-50/70 rounded-xl">
+                  <p className="text-xs font-bold text-slate-900 truncate">{user?.name}</p>
+                  <p className="text-[10px] text-slate-500 truncate font-mono">{user?.email}</p>
+                  <span className="inline-block mt-1.5 text-[9px] uppercase font-bold px-2 py-0.5 rounded bg-orange-100 text-orange-800 border border-orange-200">
+                    {user?.role || 'Staff Member'}
+                  </span>
+                </div>
+
+                <div className="space-y-0.5 text-xs font-medium">
+                  <a
+                    href="/profile"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-800 hover:bg-orange-50 hover:text-orange-700 transition-colors font-bold"
+                  >
+                    <User className="w-4 h-4 text-orange-500" />
+                    <span>My Profile</span>
+                  </a>
+
+                  <a
+                    href="/self-service"
+                    onClick={() => setUserMenuOpen(false)}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-700 hover:bg-slate-100 transition-colors"
+                  >
+                    <UserCheck2 className="w-4 h-4 text-indigo-500" />
+                    <span>My Self-Service</span>
+                  </a>
+
+                  {canConfigSaas && (
+                    <a
+                      href="/settings"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-700 hover:bg-slate-100 transition-colors"
+                    >
+                      <Sliders className="w-4 h-4 text-purple-500" />
+                      <span>SaaS Settings</span>
+                    </a>
+                  )}
+                </div>
+
+                <div className="pt-1.5 mt-1.5 border-t border-slate-100">
+                  <button
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      logout();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-rose-600 hover:bg-rose-50 font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </header>
