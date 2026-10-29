@@ -16,118 +16,149 @@ import {
   Mail,
   ArrowLeft,
   KeyRound,
+  ShieldCheck,
+  Send,
 } from 'lucide-react';
 
-function ResetPasswordForm() {
+function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const tokenParam = searchParams.get('token') || '';
+  const emailParam = searchParams.get('email') || '';
   const mustResetParam = searchParams.get('mustReset') === 'true';
 
-  const [mode, setMode] = useState<'REQUEST_LINK' | 'SET_NEW_PASSWORD'>(
-    tokenParam || mustResetParam ? 'SET_NEW_PASSWORD' : 'REQUEST_LINK'
+  // Step state: 'REQUEST_OTP' | 'VERIFY_OTP'
+  const [step, setStep] = useState<'REQUEST_OTP' | 'VERIFY_OTP'>(
+    emailParam || tokenParam ? 'VERIFY_OTP' : 'REQUEST_OTP'
   );
 
-  // Request Link State
-  const [email, setEmail] = useState('');
-  const [requestSent, setRequestSent] = useState(false);
-  const [requestLoading, setRequestLoading] = useState(false);
-  const [requestError, setRequestError] = useState('');
-
-  // Set Password State
+  // Form Fields
+  const [email, setEmail] = useState(emailParam);
+  const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [oldPassword, setOldPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [submitLoading, setSubmitLoading] = useState(false);
-  const [submitSuccess, setSubmitSuccess] = useState(false);
-  const [submitError, setSubmitError] = useState('');
 
+  // UI / Async State
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+
+  // Sync query params on mount
   useEffect(() => {
-    if (tokenParam || mustResetParam) {
-      setMode('SET_NEW_PASSWORD');
+    if (emailParam) {
+      setEmail(emailParam);
+      setStep('VERIFY_OTP');
     }
-  }, [tokenParam, mustResetParam]);
+  }, [emailParam]);
 
-  // Handle Request Reset Link
-  const handleRequestLink = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setRequestLoading(true);
-    setRequestError('');
+  // Countdown timer for Resend OTP
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown((prev) => prev - 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
+
+  // 1. Send / Resend 6-Digit OTP
+  const handleSendOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!email || !email.trim()) {
+      setError('Please provide your corporate email or employee ID.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setSuccessMsg('');
+
     try {
       const res = await fetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: email.trim() }),
       });
       const data = await res.json();
+
       if (data.success) {
-        setRequestSent(true);
+        setStep('VERIFY_OTP');
+        setCooldown(60);
+        setSuccessMsg(data.message || `A 6-digit OTP has been sent to ${email}.`);
       } else {
-        setRequestError(data.error || 'Failed to dispatch reset email.');
+        setError(data.error || 'Failed to dispatch verification code.');
       }
     } catch (err: any) {
-      setRequestError(err.message || 'Network error');
+      setError(err.message || 'Network error occurred. Please try again.');
     } finally {
-      setRequestLoading(false);
+      setLoading(false);
     }
   };
 
-  // Handle Set Permanent Password
-  const handleSetPassword = async (e: React.FormEvent) => {
+  // 2. Verify 6-Digit OTP & Set New Password
+  const handleVerifyAndReset = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+    setSuccessMsg('');
+
+    if (!otp || otp.trim().length !== 6) {
+      setError('Please enter the complete 6-digit verification code.');
+      return;
+    }
     if (newPassword.length < 6) {
-      setSubmitError('Password must be at least 6 characters long.');
+      setError('Password must be at least 6 characters long.');
       return;
     }
     if (newPassword !== confirmPassword) {
-      setSubmitError('Passwords do not match. Please verify your entries.');
+      setError('Passwords do not match. Please re-enter.');
       return;
     }
 
-    setSubmitLoading(true);
-    setSubmitError('');
+    setLoading(true);
 
     try {
       const res = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          email: email.trim(),
+          otp: otp.trim(),
           token: tokenParam || undefined,
           newPassword,
-          oldPassword: oldPassword || undefined,
         }),
       });
 
       const data = await res.json();
       if (data.success) {
-        setSubmitSuccess(true);
+        setIsSuccess(true);
         setTimeout(() => {
           router.push('/dashboard');
-        }, 2500);
+        }, 2200);
       } else {
-        setSubmitError(data.error || 'Failed to update password.');
+        setError(data.error || 'Verification failed. Please check the code.');
       }
     } catch (err: any) {
-      setSubmitError(err.message || 'Network error');
+      setError(err.message || 'Network error occurred. Please try again.');
     } finally {
-      setSubmitLoading(false);
+      setLoading(false);
     }
   };
 
-  // Password Strength calculation
-  const getPasswordStrength = () => {
+  // Password Strength Score
+  const getStrength = () => {
     if (!newPassword) return 0;
-    let score = 0;
-    if (newPassword.length >= 8) score += 1;
-    if (/[A-Z]/.test(newPassword)) score += 1;
-    if (/[0-9]/.test(newPassword)) score += 1;
-    if (/[^A-Za-z0-9]/.test(newPassword)) score += 1;
-    return score;
+    let s = 0;
+    if (newPassword.length >= 8) s += 1;
+    if (/[A-Z]/.test(newPassword)) s += 1;
+    if (/[0-9]/.test(newPassword)) s += 1;
+    if (/[^A-Za-z0-9]/.test(newPassword)) s += 1;
+    return s;
   };
-  const strength = getPasswordStrength();
+  const strength = getStrength();
 
   return (
     <div className="min-h-screen w-full flex flex-col justify-center items-center bg-slate-900 p-4 sm:p-6 relative overflow-hidden text-slate-900 antialiased selection:bg-orange-500 selection:text-white">
@@ -147,221 +178,212 @@ function ResetPasswordForm() {
         </Link>
       </div>
 
-      {/* Main Card */}
-      <div className="max-w-md w-full bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200/90 relative z-10 backdrop-blur-xl">
-        {/* SUCCESS CONFIRMATION */}
-        {submitSuccess ? (
-          <div className="text-center py-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-inner">
-              <CheckCircle2 className="w-8 h-8" />
+      {/* Main Glass Card */}
+      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200/80 p-8 sm:p-10 relative z-10 animate-fadeIn">
+        {/* SUCCESS STATE */}
+        {isSuccess ? (
+          <div className="text-center py-6 space-y-4">
+            <div className="w-16 h-16 rounded-3xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center mx-auto shadow-sm">
+              <CheckCircle2 className="w-9 h-9" />
             </div>
-            <h2 className="text-xl font-black text-slate-900">Password Updated!</h2>
-            <p className="text-xs text-slate-600 leading-relaxed max-w-xs mx-auto">
-              Your permanent password has been saved and your account is now fully secured. Redirecting you to your workspace...
+            <h2 className="text-2xl font-black text-slate-950 tracking-tight">Password Updated!</h2>
+            <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
+              Your 6-digit OTP was verified and your permanent password is now active. Logging you in to your workspace...
             </p>
-            <div className="pt-2">
-              <div className="inline-flex items-center gap-2 text-xs font-bold text-orange-600 bg-orange-50 px-4 py-2 rounded-xl">
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                <span>Launching Dashboard...</span>
-              </div>
+            <div className="pt-2 flex justify-center">
+              <div className="w-6 h-6 border-3 border-orange-500 border-t-transparent rounded-full animate-spin" />
             </div>
           </div>
-        ) : mode === 'REQUEST_LINK' ? (
-          /* ─────────────────────────────────────────────────────────────
-             MODE 1: REQUEST PASSWORD RESET EMAIL
-             ───────────────────────────────────────────────────────────── */
+        ) : step === 'REQUEST_OTP' ? (
+          /* STEP 1: REQUEST 6-DIGIT OTP */
           <div>
-            <div className="mb-6">
-              <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center mb-3">
-                <KeyRound className="w-5 h-5" />
+            <div className="mb-6 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-orange-50 text-orange-600 border border-orange-200 flex items-center justify-center mx-auto mb-3">
+                <KeyRound className="w-6 h-6" />
               </div>
-              <h1 className="text-xl font-black text-slate-900">Reset Password</h1>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                Enter your registered corporate email or employee ID. We&apos;ll dispatch a secure reset link to your inbox.
-              </p>
-            </div>
-
-            {requestSent ? (
-              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-3">
-                <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Check Your Inbox!</span>
-                </div>
-                <p className="text-xs text-emerald-700 leading-relaxed">
-                  We&apos;ve sent reset instructions to <strong className="font-semibold">{email}</strong>. Please click the link inside the email to set your new password.
-                </p>
-                <div className="pt-2 flex items-center justify-between text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setRequestSent(false)}
-                    className="font-bold text-emerald-800 hover:underline cursor-pointer"
-                  >
-                    Try another email
-                  </button>
-                  <Link href="/login" className="font-bold text-orange-600 hover:underline">
-                    Back to Sign In →
-                  </Link>
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={handleRequestLink} className="space-y-4">
-                {requestError && (
-                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                    <span>{requestError}</span>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Corporate Email or Employee ID
-                  </label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                    <input
-                      type="text"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      placeholder="name@company.com or EMP001"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 font-medium focus:outline-none focus:border-orange-500 focus:bg-white focus:ring-4 focus:ring-orange-500/10 transition-all"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={requestLoading}
-                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-extrabold text-xs shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
-                >
-                  {requestLoading ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Sending Email...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Send Reset Link</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-
-                <div className="pt-2 text-center">
-                  <Link
-                    href="/login"
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Return to Login</span>
-                  </Link>
-                </div>
-              </form>
-            )}
-          </div>
-        ) : (
-          /* ─────────────────────────────────────────────────────────────
-             MODE 2: SET PERMANENT PASSWORD (TOKEN OR FIRST-TIME RESET)
-             ───────────────────────────────────────────────────────────── */
-          <div>
-            <div className="mb-6">
-              <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center mb-3">
-                <Lock className="w-5 h-5" />
-              </div>
-              <h1 className="text-xl font-black text-slate-900">
-                {mustResetParam ? 'Set Permanent Password' : 'Create New Password'}
+              <h1 className="text-xl font-black tracking-tight text-slate-950">
+                {mustResetParam ? 'Account Activation' : 'Password Recovery'}
               </h1>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                {mustResetParam
-                  ? 'For security compliance, you must replace your temporary password with a permanent personal password.'
-                  : 'Please enter your new secure password below.'}
+              <p className="text-xs text-slate-500 mt-1">
+                Enter your corporate email or Employee ID to receive a secure 6-digit OTP code.
               </p>
             </div>
 
-            {submitError && (
-              <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>{submitError}</span>
+            {error && (
+              <div className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{error}</span>
               </div>
             )}
 
-            <form onSubmit={handleSetPassword} className="space-y-4">
-              {/* Optional Old Password if authenticated without token */}
-              {!tokenParam && !mustResetParam && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Current Password
-                  </label>
+            <form onSubmit={handleSendOtp} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Corporate Email or Employee ID
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                   <input
-                    type="password"
-                    value={oldPassword}
-                    onChange={(e) => setOldPassword(e.target.value)}
+                    type="text"
                     required
-                    placeholder="••••••••"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="user@company.com or EMP001"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:bg-white focus:border-orange-500 transition-colors"
                   />
                 </div>
-              )}
+              </div>
 
-              {/* New Password */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 cursor-pointer transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {loading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Sending 6-Digit Code...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Send 6-Digit OTP</span>
+                    <Send className="w-3.5 h-3.5" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-6 text-center">
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Sign In</span>
+              </Link>
+            </div>
+          </div>
+        ) : (
+          /* STEP 2: ENTER 6-DIGIT OTP & SET PASSWORD */
+          <div>
+            <div className="mb-5 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-200 flex items-center justify-center mx-auto mb-3">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <h1 className="text-xl font-black tracking-tight text-slate-950">
+                {mustResetParam ? 'Set Your Workspace Password' : 'Enter 6-Digit Code'}
+              </h1>
+              <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
+                We sent a 6-digit OTP code to <strong className="text-slate-800">{email}</strong>.
+              </p>
+            </div>
+
+            {successMsg && (
+              <div className="mb-4 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                <span>{successMsg}</span>
+              </div>
+            )}
+
+            {error && (
+              <div className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleVerifyAndReset} className="space-y-4">
+              {/* 6-DIGIT OTP INPUT */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  New Permanent Password
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-slate-700">6-Digit Verification OTP</label>
+                  <button
+                    type="button"
+                    onClick={() => setStep('REQUEST_OTP')}
+                    className="text-[11px] text-orange-600 hover:underline font-bold"
+                  >
+                    Change Email
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  maxLength={6}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="• • • • • •"
+                  className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl py-3 text-center text-2xl font-mono font-black tracking-[0.5em] text-slate-900 placeholder:text-slate-300 focus:outline-none focus:bg-white focus:border-orange-500 transition-colors shadow-inner"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              {/* NEW PASSWORD */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">New Permanent Password</label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                   <input
                     type={showPassword ? 'text' : 'password'}
+                    required
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
-                    required
-                    placeholder="At least 6 characters"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-11 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white focus:ring-4 focus:ring-orange-500/10 transition-all font-medium"
+                    placeholder="Minimum 6 characters"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:bg-white focus:border-orange-500 transition-colors"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
 
-                {/* Password strength bar */}
+                {/* Password Strength Meter */}
                 {newPassword && (
                   <div className="mt-2 space-y-1">
-                    <div className="flex gap-1 h-1">
-                      <div className={`h-full flex-1 rounded-full ${strength >= 1 ? 'bg-orange-500' : 'bg-slate-200'}`} />
-                      <div className={`h-full flex-1 rounded-full ${strength >= 2 ? 'bg-amber-500' : 'bg-slate-200'}`} />
-                      <div className={`h-full flex-1 rounded-full ${strength >= 3 ? 'bg-emerald-500' : 'bg-slate-200'}`} />
-                      <div className={`h-full flex-1 rounded-full ${strength >= 4 ? 'bg-emerald-600' : 'bg-slate-200'}`} />
+                    <div className="flex gap-1.5 h-1">
+                      {[1, 2, 3, 4].map((level) => (
+                        <div
+                          key={level}
+                          className={`flex-1 rounded-full transition-colors ${
+                            strength >= level
+                              ? strength >= 3
+                                ? 'bg-emerald-500'
+                                : strength === 2
+                                ? 'bg-amber-500'
+                                : 'bg-rose-500'
+                              : 'bg-slate-200'
+                          }`}
+                        />
+                      ))}
                     </div>
                     <span className="text-[10px] text-slate-400 font-semibold">
-                      {strength <= 1 ? 'Weak' : strength <= 3 ? 'Good' : 'Strong & Secure'}
+                      {strength >= 3 ? 'Strong password' : strength === 2 ? 'Medium strength' : 'Weak password'}
                     </span>
                   </div>
                 )}
               </div>
 
-              {/* Confirm Password */}
+              {/* CONFIRM PASSWORD */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Confirm Permanent Password
-                </label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Confirm New Password</label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                   <input
                     type={showConfirm ? 'text' : 'password'}
+                    required
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    required
-                    placeholder="Re-enter your password"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-11 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white focus:ring-4 focus:ring-orange-500/10 transition-all font-medium"
+                    placeholder="Re-enter password"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:bg-white focus:border-orange-500 transition-colors"
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirm(!showConfirm)}
-                    className="absolute right-3.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -370,40 +392,57 @@ function ResetPasswordForm() {
 
               <button
                 type="submit"
-                disabled={submitLoading}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white font-extrabold text-xs shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
+                disabled={loading}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs shadow-md shadow-orange-500/20 cursor-pointer transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                {submitLoading ? (
+                {loading ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Saving Password...</span>
+                    <span>Verifying Code & Updating...</span>
                   </>
                 ) : (
                   <>
-                    <span>Set Password & Activate</span>
+                    <span>Verify OTP & Set Password</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
-
-              <div className="pt-2 text-center">
-                <Link
-                  href="/login"
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Cancel & Back to Sign In</span>
-                </Link>
-              </div>
             </form>
+
+            {/* RESEND OTP BAR */}
+            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <span>Didn't receive the OTP?</span>
+              {cooldown > 0 ? (
+                <span className="font-bold text-slate-400">Resend in {cooldown}s</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleSendOtp()}
+                  disabled={loading}
+                  className="font-bold text-orange-600 hover:text-orange-700 hover:underline cursor-pointer"
+                >
+                  Resend 6-Digit OTP
+                </button>
+              )}
+            </div>
+
+            <div className="mt-4 text-center">
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-slate-700 transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Sign In</span>
+              </Link>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Security footer */}
-      <div className="mt-6 text-center text-xs text-slate-400 relative z-10 flex items-center gap-1.5">
-        <Shield className="w-3.5 h-3.5 text-emerald-400" />
-        <span>Enterprise SSL Encryption • Multi-Tenant Compliant</span>
+      {/* Security Footer Seal */}
+      <div className="mt-8 text-center text-xs text-slate-400 flex items-center gap-2">
+        <Shield className="w-4 h-4 text-slate-400" />
+        <span>Enterprise 256-bit Statutory SSL Encryption</span>
       </div>
     </div>
   );
@@ -414,12 +453,11 @@ export default function ResetPasswordPage() {
     <Suspense
       fallback={
         <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white text-xs">
-          Loading Security Service...
+          Loading Password Recovery...
         </div>
       }
     >
-      <ResetPasswordForm />
+      <ResetPasswordContent />
     </Suspense>
   );
 }
-

@@ -17,6 +17,8 @@ export interface IUser extends Document {
   mustChangePassword?: boolean;
   resetPasswordToken?: string;
   resetPasswordExpires?: Date;
+  resetPasswordOtp?: string;
+  resetPasswordOtpExpires?: Date;
   lastLogin?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -42,6 +44,8 @@ const UserSchema = new Schema<IUser>(
     mustChangePassword: { type: Boolean, default: false },
     resetPasswordToken: { type: String, index: true },
     resetPasswordExpires: { type: Date },
+    resetPasswordOtp: { type: String, index: true },
+    resetPasswordOtpExpires: { type: Date },
     lastLogin: { type: Date },
   },
   { timestamps: true }

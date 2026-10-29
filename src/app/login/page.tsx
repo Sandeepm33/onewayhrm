@@ -46,7 +46,7 @@ export default function LoginPage() {
 
     if (res === true || res?.success) {
       if (res?.mustChangePassword) {
-        router.push('/reset-password?mustReset=true');
+        router.push(`/reset-password?mustReset=true&email=${encodeURIComponent(email)}`);
       } else {
         router.push('/dashboard');
       }

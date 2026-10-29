@@ -9,7 +9,8 @@ import { sendPasswordChangedEmail } from '@/lib/email';
 export async function POST(req: NextRequest) {
   try {
     await connectToDatabase();
-    const { token, newPassword, oldPassword } = await req.json();
+    const body = await req.json();
+    const { email, otp, token, newPassword, oldPassword } = body;
 
     if (!newPassword || newPassword.length < 6) {
       return NextResponse.json(
@@ -20,8 +21,47 @@ export async function POST(req: NextRequest) {
 
     let user = null;
 
-    // Flow A: Reset using email token
-    if (token) {
+    // Flow 1: 6-Digit OTP Verification (Primary Modern Way)
+    if (otp && String(otp).trim()) {
+      const cleanOtp = String(otp).trim();
+      const cleanEmail = email ? String(email).trim().toLowerCase() : '';
+
+      if (cleanEmail) {
+        user = await User.findOne({ email: cleanEmail });
+      }
+
+      // If user not found by email, check if authenticated session exists
+      if (!user) {
+        const session = getSessionFromRequest(req);
+        if (session?.userId) {
+          user = await User.findById(session.userId);
+        }
+      }
+
+      if (!user) {
+        return NextResponse.json(
+          { success: false, error: 'User account not found. Please verify your email address.' },
+          { status: 404 }
+        );
+      }
+
+      // Verify OTP and expiration
+      if (!user.resetPasswordOtp || user.resetPasswordOtp !== cleanOtp) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid 6-digit verification code. Please check your email or click "Resend Code".' },
+          { status: 400 }
+        );
+      }
+
+      if (!user.resetPasswordOtpExpires || new Date() > new Date(user.resetPasswordOtpExpires)) {
+        return NextResponse.json(
+          { success: false, error: 'The 6-digit verification code has expired. Please click "Resend Code" to receive a fresh OTP.' },
+          { status: 400 }
+        );
+      }
+    }
+    // Flow 2: Legacy Email Link Token
+    else if (token) {
       user = await User.findOne({
         resetPasswordToken: token,
         resetPasswordExpires: { $gt: new Date() },
@@ -29,16 +69,17 @@ export async function POST(req: NextRequest) {
 
       if (!user) {
         return NextResponse.json(
-          { success: false, error: 'Password reset link is invalid or has expired. Please request a new one.' },
+          { success: false, error: 'Password reset link is invalid or has expired. Please request a new 6-digit code.' },
           { status: 400 }
         );
       }
-    } else {
-      // Flow B: Reset using active session (e.g. forced first-time reset or authenticated user)
+    }
+    // Flow 3: Session-authenticated reset with Old Password
+    else {
       const session = getSessionFromRequest(req);
       if (!session) {
         return NextResponse.json(
-          { success: false, error: 'Unauthorized: Session or reset token required' },
+          { success: false, error: '6-digit verification code or active session is required.' },
           { status: 401 }
         );
       }
@@ -48,7 +89,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
       }
 
-      // If user had mustChangePassword === false, require oldPassword check
+      // If not forced reset, require oldPassword verification
       if (!user.mustChangePassword && oldPassword) {
         const isValid = await comparePassword(oldPassword, user.passwordHash);
         if (!isValid) {
@@ -60,9 +101,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Update password
+    // Update password & clear all OTP / reset flags
     const passwordHash = await hashPassword(newPassword);
     user.passwordHash = passwordHash;
+    user.resetPasswordOtp = undefined;
+    user.resetPasswordOtpExpires = undefined;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
     user.mustChangePassword = false;

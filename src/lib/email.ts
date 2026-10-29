@@ -101,7 +101,71 @@ function emailLayout(title: string, bodyContent: string): string {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   1. PASSWORD RESET REQUEST EMAIL
+   1. PASSWORD RESET / ACTIVATION 6-DIGIT OTP EMAIL
+   ───────────────────────────────────────────────────────────────────────────── */
+export async function sendPasswordResetOtpEmail({
+  to,
+  name,
+  otp,
+  isFirstTime = false,
+}: {
+  to: string;
+  name: string;
+  otp: string;
+  isFirstTime?: boolean;
+}) {
+  const subject = isFirstTime
+    ? `🔑 Your 6-Digit Workspace Activation Code: ${otp} - ${appName}`
+    : `🔐 Your 6-Digit Password Reset OTP: ${otp} - ${appName}`;
+
+  const heading = isFirstTime
+    ? 'Activate Your Workspace Account'
+    : 'Reset Your Workspace Password';
+
+  const subtext = isFirstTime
+    ? 'Please use the 6-digit verification code below to activate your account and choose your private permanent password.'
+    : 'We received a request to reset your workspace password. Use the 6-digit one-time password (OTP) below to proceed.';
+
+  const html = emailLayout(
+    heading,
+    `
+    <h1 class="h1">${heading}</h1>
+    <p class="p">Hello <strong>${name}</strong>,</p>
+    <p class="p">${subtext}</p>
+    
+    <div style="text-align: center; margin: 28px 0;">
+      <div style="display: inline-block; background: #fff7ed; border: 2px dashed #f97316; border-radius: 16px; padding: 18px 40px; box-shadow: 0 4px 16px rgba(249,115,22,0.12);">
+        <div style="font-size: 11px; font-weight: 800; color: #ea580c; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px;">
+          Your 6-Digit Verification Code
+        </div>
+        <div style="font-size: 40px; font-weight: 900; letter-spacing: 12px; color: #0f172a; font-family: 'Courier New', Courier, monospace;">
+          ${otp}
+        </div>
+      </div>
+    </div>
+
+    <div class="info-card">
+      <p class="p" style="margin-bottom: 6px; font-size: 12px; color: #64748b; font-weight: 700;">
+        Security Notice:
+      </p>
+      <p class="p" style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.6;">
+        • This 6-digit code will expire in <strong>10 minutes</strong>.<br>
+        • Never share your verification code with anyone, including ${appName} administrators.<br>
+        • If you did not request this verification code, please disregard this email.
+      </p>
+    </div>
+
+    <div style="text-align: center; margin-top: 24px;">
+      <a href="${appUrl}/reset-password?email=${encodeURIComponent(to)}" class="btn">Enter Code & Set Password →</a>
+    </div>
+    `
+  );
+
+  return sendEmail({ to, subject, html });
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   1B. LEGACY PASSWORD RESET LINK (BACKWARDS COMPATIBILITY)
    ───────────────────────────────────────────────────────────────────────────── */
 export async function sendPasswordResetEmail({
   to,

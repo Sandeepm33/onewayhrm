@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { connectToDatabase } from '@/lib/mongodb';
 import { User } from '@/models/User';
 import { Employee } from '@/models/Employee';
-import { sendPasswordResetEmail } from '@/lib/email';
+import { sendPasswordResetOtpEmail } from '@/lib/email';
 
 export async function POST(req: NextRequest) {
   try {
@@ -40,21 +40,27 @@ export async function POST(req: NextRequest) {
       // For security, don't reveal whether user exists
       return NextResponse.json({
         success: true,
-        message: 'If an account matches that email or Employee ID, password reset instructions have been dispatched.',
+        message: 'If an account matches that email or Employee ID, a 6-digit verification code has been dispatched.',
       });
     }
 
-    // Generate random secure token
+    // Generate 6-digit numeric OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    user.resetPasswordOtp = otp;
+    user.resetPasswordOtpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Also set token for backwards compatibility
     const token = crypto.randomBytes(32).toString('hex');
     user.resetPasswordToken = token;
-    user.resetPasswordExpires = new Date(Date.now() + 3600000); // 1 hour
+    user.resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000);
     await user.save();
 
-    // Send reset email via SMTP
-    const emailResult = await sendPasswordResetEmail({
+    // Send 6-digit OTP email via SMTP
+    const emailResult = await sendPasswordResetOtpEmail({
       to: user.email,
       name: user.name,
-      token,
+      otp,
+      isFirstTime: Boolean(user.mustChangePassword),
     });
 
     if (!emailResult.success) {
@@ -63,7 +69,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Password reset instructions have been sent to ${user.email}.`,
+      message: `A 6-digit verification code has been sent to ${user.email}.`,
+      email: user.email,
     });
   } catch (error: any) {
     console.error('Forgot password error:', error);
@@ -73,4 +80,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-
