@@ -136,6 +136,7 @@ export async function POST(req: NextRequest) {
     const response = NextResponse.json({
       success: true,
       token,
+      mustChangePassword: Boolean(user.mustChangePassword),
       user: {
         id: user._id,
         email: user.email,
@@ -144,6 +145,7 @@ export async function POST(req: NextRequest) {
         organizationId: orgId,
         employeeId: employee ? employee._id : user.employeeId,
         canCustomizeSaas: Boolean(user.canCustomizeSaas),
+        mustChangePassword: Boolean(user.mustChangePassword),
       },
       organization,
       employee,

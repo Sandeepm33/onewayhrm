@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Organization, DEFAULT_SAAS_FEATURES } from '@/models/Organization';
 import { User } from '@/models/User';
 import { Role } from '@/models/Role';
 import { hashPassword, signJwtToken, getSessionFromRequest } from '@/lib/auth';
+import { sendTenantProvisionedEmail } from '@/lib/email';
 
 export async function POST(req: NextRequest) {
   try {
@@ -112,8 +114,9 @@ export async function POST(req: NextRequest) {
       ],
     });
 
-    // 3. Create Admin User
+    // 3. Create Admin User with temporary password flag & activation token
     const passwordHash = await hashPassword(password);
+    const resetToken = crypto.randomBytes(32).toString('hex');
     const user = await User.create({
       email: cleanEmail,
       passwordHash,
@@ -122,7 +125,21 @@ export async function POST(req: NextRequest) {
       roleId: ownerRole._id,
       organizationId: org._id,
       isActive: true,
+      mustChangePassword: true,
+      resetPasswordToken: resetToken,
+      resetPasswordExpires: new Date(Date.now() + 86400000 * 3),
     });
+
+    // Send Welcome Email via SMTP
+    sendTenantProvisionedEmail({
+      to: cleanEmail,
+      adminName: adminName.trim(),
+      organizationName: companyName.trim(),
+      organizationSlug: slug,
+      temporaryPassword: password,
+      plan,
+      resetToken,
+    }).catch((err) => console.error('[Register Email Dispatch Error]:', err));
 
     // 4. Issue JWT Token
     const tokenPayload = {

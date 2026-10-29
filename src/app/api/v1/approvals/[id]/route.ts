@@ -5,6 +5,8 @@ import { resolveOrganizationId } from '@/lib/tenant';
 import { ApprovalRequest } from '@/models/ApprovalWorkflow';
 import { AuditLog } from '@/models/Operations';
 import { LeaveRequest, LeaveBalance } from '@/models/Leave';
+import { Employee } from '@/models/Employee';
+import { sendLeaveStatusEmail } from '@/lib/email';
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -56,6 +58,21 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           }
         );
       }
+
+      // Email employee on rejection
+      if (request.requesterEmployeeId) {
+        const emp = await Employee.findById(request.requesterEmployeeId);
+        if (emp?.email) {
+          sendLeaveStatusEmail({
+            to: emp.email,
+            employeeName: `${emp.firstName} ${emp.lastName}`,
+            leaveType: request.title || 'Leave Request',
+            dates: request.details?.duration || 'Requested dates',
+            status: 'REJECTED',
+            approverComments: comments,
+          }).catch((e) => console.error('[Leave Rejection Email Error]:', e));
+        }
+      }
     } else if (action === 'APPROVED') {
       // Check if more steps remain in the chain
       if (request.currentStepIndex + 1 < request.totalSteps) {
@@ -97,6 +114,19 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
               if (leave.leaveType === 'EARNED') balance.earnedLeave.used += leave.totalDays;
               if (leave.leaveType === 'UNPAID') balance.unpaidLeave.used += leave.totalDays;
               await balance.save();
+            }
+
+            // Email employee on approval
+            const emp = await Employee.findById(leave.employeeId);
+            if (emp?.email) {
+              sendLeaveStatusEmail({
+                to: emp.email,
+                employeeName: `${emp.firstName} ${emp.lastName}`,
+                leaveType: leave.leaveType || 'Leave Application',
+                dates: `${new Date(leave.startDate).toLocaleDateString('en-IN')} to ${new Date(leave.endDate).toLocaleDateString('en-IN')}`,
+                status: 'APPROVED',
+                approverComments: comments,
+              }).catch((e) => console.error('[Leave Approval Email Error]:', e));
             }
           }
         }

@@ -14,6 +14,9 @@ export interface IUser extends Document {
   isActive: boolean;
   avatarUrl?: string;
   canCustomizeSaas?: boolean;
+  mustChangePassword?: boolean;
+  resetPasswordToken?: string;
+  resetPasswordExpires?: Date;
   lastLogin?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -36,6 +39,9 @@ const UserSchema = new Schema<IUser>(
     canCustomizeSaas: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
     avatarUrl: { type: String },
+    mustChangePassword: { type: Boolean, default: false },
+    resetPasswordToken: { type: String, index: true },
+    resetPasswordExpires: { type: Date },
     lastLogin: { type: Date },
   },
   { timestamps: true }

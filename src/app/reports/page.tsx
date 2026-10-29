@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/context/AuthContext';
-import { BarChart3, Download, Users, CreditCard, UserCheck, CalendarDays, ArrowUpRight } from 'lucide-react';
+import { BarChart3, Download, Users, CreditCard, Building2, MapPin, Inbox } from 'lucide-react';
 
 export default function ReportsPage() {
   const { user, organization } = useAuth();
@@ -63,6 +63,34 @@ export default function ReportsPage() {
   const totalNet = payslips.reduce((acc, p) => acc + (p.netSalary || 0), 0);
   const totalDeductions = payslips.reduce((acc, p) => acc + (p.totalDeductions || 0), 0);
 
+  // Dynamic Departmental Distribution from real employee master
+  const deptMap: Record<string, number> = {};
+  employees.forEach((e) => {
+    const deptName = e.departmentId?.name || 'Unassigned';
+    deptMap[deptName] = (deptMap[deptName] || 0) + 1;
+  });
+  const deptDistribution = Object.entries(deptMap)
+    .map(([name, count]) => ({
+      name,
+      count,
+      pct: employees.length > 0 ? Math.round((count / employees.length) * 100) : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  // Dynamic Branch Distribution from real employee master
+  const branchMap: Record<string, number> = {};
+  employees.forEach((e) => {
+    const branchName = e.branchId?.name || 'Unassigned';
+    branchMap[branchName] = (branchMap[branchName] || 0) + 1;
+  });
+  const branchDistribution = Object.entries(branchMap)
+    .map(([name, count]) => ({
+      name,
+      count,
+      pct: employees.length > 0 ? Math.round((count / employees.length) * 100) : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+
   return (
     <DashboardLayout>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -72,13 +100,13 @@ export default function ReportsPage() {
               Business Intelligence
             </span>
             <span className="text-slate-300">•</span>
-            <span className="text-xs font-medium text-slate-500">Aggregated MongoDB Insights</span>
+            <span className="text-xs font-medium text-slate-500">Live MongoDB Aggregation</span>
           </div>
           <h1 className="text-2xl font-black tracking-tight text-slate-900 flex items-center gap-2">
             Workforce Reports & Analytics
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Real data registers for headcount, salary disbursals, statutory deductions, and CSV exports
+            Dynamic registers for employee headcounts, salary disbursals, statutory deductions, and CSV exports
           </p>
         </div>
 
@@ -88,90 +116,150 @@ export default function ReportsPage() {
             className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold flex items-center gap-2 shadow-xs cursor-pointer transition-colors"
           >
             <Download className="w-3.5 h-3.5 text-orange-600" />
-            <span>Export Employees CSV</span>
+            <span>Export Employees CSV ({employees.length})</span>
           </button>
           <button
             onClick={() => handleExportCSV('PAYROLL')}
             className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-orange-500/20 cursor-pointer transition-all"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Export Payroll Register</span>
+            <span>Export Payroll Register ({payslips.length})</span>
           </button>
         </div>
       </div>
 
-      {/* METRIC SUMMARIES */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Workforce Gross Disbursed</span>
-          <div className="text-2xl font-black text-slate-900 mt-1">
-            INR {totalGross.toLocaleString('en-IN')}
-          </div>
-          <p className="text-[11px] text-slate-500 mt-1 font-medium">All approved pay cycles in database</p>
+      {loading ? (
+        <div className="py-16 text-center text-slate-400 text-xs">
+          <div className="w-8 h-8 border-3 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          Aggregating workforce reports...
         </div>
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Statutory Deductions (EPF/PT/TDS)</span>
-          <div className="text-2xl font-black text-rose-600 mt-1">
-            INR {totalDeductions.toLocaleString('en-IN')}
-          </div>
-          <p className="text-[11px] text-slate-500 mt-1 font-medium">Government statutory withholdings</p>
-        </div>
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Net Take-Home Disbursed</span>
-          <div className="text-2xl font-black text-emerald-600 mt-1">
-            INR {totalNet.toLocaleString('en-IN')}
-          </div>
-          <p className="text-[11px] text-slate-500 mt-1 font-medium">Direct NEFT transferred salaries</p>
-        </div>
-      </div>
-
-      {/* DEPARTMENTAL HEADCOUNT BREAKDOWN */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
-          <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider mb-4">
-            Departmental Workforce Distribution
-          </h3>
-          <div className="space-y-3">
-            {[
-              { name: 'Engineering & Technology', count: 2, pct: 50 },
-              { name: 'Human Resources & Talent', count: 1, pct: 25 },
-              { name: 'Product & Design', count: 1, pct: 25 },
-            ].map((d) => (
-              <div key={d.name}>
-                <div className="flex justify-between text-xs font-medium mb-1">
-                  <span className="text-slate-700 font-semibold">{d.name}</span>
-                  <span className="text-orange-600 font-bold">{d.count} ({d.pct}%)</span>
-                </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div className="bg-orange-500 h-full rounded-full" style={{ width: `${d.pct}%` }} />
-                </div>
+      ) : (
+        <>
+          {/* METRIC SUMMARIES */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Total Workforce Gross Disbursed
+              </span>
+              <div className="text-2xl font-black text-slate-900 mt-1">
+                INR {totalGross.toLocaleString('en-IN')}
               </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
-          <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider mb-4">
-            Branch Location Headcount
-          </h3>
-          <div className="space-y-3">
-            {[
-              { name: 'Bengaluru Innovation Center (HQ)', count: 3, pct: 75 },
-              { name: 'Mumbai Financial Hub', count: 1, pct: 25 },
-            ].map((b) => (
-              <div key={b.name}>
-                <div className="flex justify-between text-xs font-medium mb-1">
-                  <span className="text-slate-700 font-semibold">{b.name}</span>
-                  <span className="text-emerald-600 font-bold">{b.count} ({b.pct}%)</span>
-                </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${b.pct}%` }} />
-                </div>
+              <p className="text-[11px] text-slate-500 mt-1 font-medium">
+                {payslips.length} processed pay cycles in database
+              </p>
+            </div>
+            <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Total Statutory Deductions (EPF/PT/TDS)
+              </span>
+              <div className="text-2xl font-black text-rose-600 mt-1">
+                INR {totalDeductions.toLocaleString('en-IN')}
               </div>
-            ))}
+              <p className="text-[11px] text-slate-500 mt-1 font-medium">Government statutory withholdings</p>
+            </div>
+            <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Net Take-Home Disbursed
+              </span>
+              <div className="text-2xl font-black text-emerald-600 mt-1">
+                INR {totalNet.toLocaleString('en-IN')}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1 font-medium">Direct NEFT transferred salaries</p>
+            </div>
           </div>
-        </div>
-      </div>
+
+          {/* DYNAMIC DEPARTMENTAL & BRANCH BREAKDOWNS */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* DEPARTMENTAL WORKFORCE DISTRIBUTION */}
+            <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-orange-600" />
+                    <span>Departmental Workforce Distribution</span>
+                  </h3>
+                  <span className="text-[10px] font-bold text-slate-400 font-mono">
+                    {deptDistribution.length} Departments
+                  </span>
+                </div>
+
+                {deptDistribution.length === 0 ? (
+                  <div className="py-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    <Inbox className="w-6 h-6 text-slate-300 mx-auto mb-1.5" />
+                    <p className="text-xs font-bold text-slate-600">No Departmental Data</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Add employees and assign them to departments to view live workforce distributions.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3.5">
+                    {deptDistribution.map((d) => (
+                      <div key={d.name}>
+                        <div className="flex justify-between text-xs font-medium mb-1">
+                          <span className="text-slate-700 font-semibold">{d.name}</span>
+                          <span className="text-orange-600 font-bold">
+                            {d.count} ({d.pct}%)
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                          <div
+                            className="bg-orange-500 h-full rounded-full transition-all duration-500"
+                            style={{ width: `${Math.max(d.pct, 4)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* BRANCH LOCATION HEADCOUNT */}
+            <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-emerald-600" />
+                    <span>Branch Location Headcount</span>
+                  </h3>
+                  <span className="text-[10px] font-bold text-slate-400 font-mono">
+                    {branchDistribution.length} Branches
+                  </span>
+                </div>
+
+                {branchDistribution.length === 0 ? (
+                  <div className="py-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    <Inbox className="w-6 h-6 text-slate-300 mx-auto mb-1.5" />
+                    <p className="text-xs font-bold text-slate-600">No Branch Headcount Data</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Assign branch locations to employees to view geographical headcounts.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3.5">
+                    {branchDistribution.map((b) => (
+                      <div key={b.name}>
+                        <div className="flex justify-between text-xs font-medium mb-1">
+                          <span className="text-slate-700 font-semibold">{b.name}</span>
+                          <span className="text-emerald-600 font-bold">
+                            {b.count} ({b.pct}%)
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                          <div
+                            className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                            style={{ width: `${Math.max(b.pct, 4)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </DashboardLayout>
   );
 }

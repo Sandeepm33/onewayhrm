@@ -293,6 +293,27 @@ export default function RolesPage() {
           <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           Loading roles & permissions matrix...
         </div>
+      ) : filteredRoles.length === 0 ? (
+        <div className="p-12 text-center bg-white rounded-3xl border border-dashed border-slate-200 shadow-xs">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-3">
+            <Shield className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-bold text-slate-900">No Roles Found</h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-4">
+            {search
+              ? 'No roles match your search keyword.'
+              : 'Your organization has not defined any custom roles yet. Create roles with granular module-level permissions for your personnel.'}
+          </p>
+          {canCreate && !search && (
+            <button
+              onClick={() => openModal()}
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/20 inline-flex items-center gap-1.5 cursor-pointer transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create First Role</span>
+            </button>
+          )}
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredRoles.map((role) => {

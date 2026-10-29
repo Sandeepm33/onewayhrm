@@ -166,10 +166,10 @@ export default function SelfServicePage() {
         <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
           <div className="flex justify-between text-xs text-slate-500 mb-1 font-medium">
             <span>Casual Leave Balance</span>
-            <span className="font-bold text-orange-600">Total: {balance?.casualLeave?.total ?? 12}</span>
+            <span className="font-bold text-orange-600">Total: {balance?.casualLeave?.total ?? 0}</span>
           </div>
           <div className="text-3xl font-black text-slate-900">
-            {(balance?.casualLeave?.total ?? 12) - (balance?.casualLeave?.used ?? 2)} Days
+            {Math.max(0, (balance?.casualLeave?.total ?? 0) - (balance?.casualLeave?.used ?? 0))} Days
           </div>
           <p className="text-[11px] text-slate-500 mt-1 font-medium">Available for personal commitments</p>
         </div>
@@ -177,10 +177,10 @@ export default function SelfServicePage() {
         <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
           <div className="flex justify-between text-xs text-slate-500 mb-1 font-medium">
             <span>Sick Leave Balance</span>
-            <span className="font-bold text-emerald-600">Total: {balance?.sickLeave?.total ?? 12}</span>
+            <span className="font-bold text-emerald-600">Total: {balance?.sickLeave?.total ?? 0}</span>
           </div>
           <div className="text-3xl font-black text-slate-900">
-            {(balance?.sickLeave?.total ?? 12) - (balance?.sickLeave?.used ?? 1)} Days
+            {Math.max(0, (balance?.sickLeave?.total ?? 0) - (balance?.sickLeave?.used ?? 0))} Days
           </div>
           <p className="text-[11px] text-slate-500 mt-1 font-medium">Available for medical needs</p>
         </div>
@@ -188,10 +188,10 @@ export default function SelfServicePage() {
         <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs">
           <div className="flex justify-between text-xs text-slate-500 mb-1 font-medium">
             <span>Earned Privilege Leave</span>
-            <span className="font-bold text-purple-600">Total: {balance?.earnedLeave?.total ?? 15}</span>
+            <span className="font-bold text-purple-600">Total: {balance?.earnedLeave?.total ?? 0}</span>
           </div>
           <div className="text-3xl font-black text-slate-900">
-            {(balance?.earnedLeave?.total ?? 15) - (balance?.earnedLeave?.used ?? 0)} Days
+            {Math.max(0, (balance?.earnedLeave?.total ?? 0) - (balance?.earnedLeave?.used ?? 0))} Days
           </div>
           <p className="text-[11px] text-slate-500 mt-1 font-medium">Eligible for annual carry-forward</p>
         </div>

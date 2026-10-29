@@ -310,53 +310,85 @@ export default function ApprovalsPage() {
         </div>
       ) : activeTab === 'workflows' ? (
         /* WORKFLOWS TAB */
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {workflows.map((wf) => (
-            <div
-              key={wf._id}
-              className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:shadow-md transition-shadow"
-            >
-              <div className="flex items-start justify-between gap-2 mb-2">
-                <div>
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-md">
-                    {wf.module}
+        workflows.length === 0 ? (
+          <div className="p-12 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+            <Layers className="w-10 h-10 text-slate-400 mx-auto mb-2" />
+            <h3 className="text-base font-bold text-slate-900">No Approval Workflows Configured</h3>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-4">
+              Your organization does not have any approval workflow chains defined yet. Set up multi-level approval hierarchies for leaves, timesheets, and expense claims.
+            </p>
+            {canCreate && (
+              <button
+                onClick={() => setWorkflowModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/20 inline-flex items-center gap-1.5 cursor-pointer transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Configure Workflow</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {workflows.map((wf) => (
+              <div
+                key={wf._id}
+                className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div>
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-md">
+                      {wf.module}
+                    </span>
+                    <h3 className="text-sm font-bold text-slate-900 mt-1">{wf.name}</h3>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    Active
                   </span>
-                  <h3 className="text-sm font-bold text-slate-900 mt-1">{wf.name}</h3>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  Active
-                </span>
-              </div>
-
-              <p className="text-xs text-slate-500 mb-4">{wf.description}</p>
-
-              {/* Step Sequence Visualizer */}
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-2.5">
-                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  Sequential Approval Route ({wf.steps?.length || 0} Steps)
                 </div>
 
-                <div className="space-y-2">
-                  {wf.steps?.map((step, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-xs">
-                      <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[10px]">
-                        {step.stepNumber}
+                <p className="text-xs text-slate-500 mb-4">{wf.description}</p>
+
+                {/* Step Sequence Visualizer */}
+                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-2.5">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    Sequential Approval Route ({wf.steps?.length || 0} Steps)
+                  </div>
+
+                  <div className="space-y-2">
+                    {wf.steps?.map((step, idx) => (
+                      <div key={idx} className="flex items-center gap-2 text-xs">
+                        <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[10px]">
+                          {step.stepNumber}
+                        </div>
+                        <span className="font-semibold text-slate-800">{step.stepName}</span>
+                        <span className="text-[10px] font-mono text-slate-400">
+                          ({step.approverType === 'ROLE' ? `Role: ${step.roleSlug}` : step.approverType})
+                        </span>
                       </div>
-                      <span className="font-semibold text-slate-800">{step.stepName}</span>
-                      <span className="text-[10px] font-mono text-slate-400">
-                        ({step.approverType === 'ROLE' ? `Role: ${step.roleSlug}` : step.approverType})
-                      </span>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )
       ) : (
         /* INBOX OR AUDIT HISTORY LIST */
-        <div className="space-y-3">
-          {filteredRequests.map((req) => {
+        filteredRequests.length === 0 ? (
+          <div className="p-12 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+            <CheckSquare className="w-10 h-10 text-slate-400 mx-auto mb-2" />
+            <h3 className="text-base font-bold text-slate-900">
+              {activeTab === 'inbox' ? 'Your Inbox is Clean' : 'No Decision Audit History'}
+            </h3>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+              {activeTab === 'inbox'
+                ? 'No pending approval requests require your review at this time.'
+                : 'No historical approvals or rejections have been recorded yet.'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredRequests.map((req) => {
             const isPending = req.status === 'PENDING';
             const emp = req.requesterEmployeeId;
 
@@ -455,17 +487,8 @@ export default function ApprovalsPage() {
               </div>
             );
           })}
-
-          {filteredRequests.length === 0 && (
-            <div className="py-16 text-center text-slate-400 bg-white rounded-2xl border border-slate-200">
-              <CheckSquare className="w-10 h-10 mx-auto text-slate-300 mb-2" />
-              <p className="text-xs font-semibold">
-                {activeTab === 'inbox' ? 'All caught up! No pending approvals.' : 'No decision history found.'}
-              </p>
-            </div>
-          )}
         </div>
-      )}
+      ))}
 
       {/* REJECT MODAL WITH COMMENTS */}
       {rejectModalOpen && selectedReqForAction && (

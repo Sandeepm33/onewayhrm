@@ -4,7 +4,7 @@ import { getSessionFromRequest } from '@/lib/auth';
 import { Holiday } from '@/models/Holiday';
 import { resolveOrganizationId } from '@/lib/tenant';
 
-const DEFAULT_INDIAN_HOLIDAYS_2026 = [
+export const DEFAULT_INDIAN_HOLIDAYS_2026 = [
   { name: 'New Year Day', date: '2026-01-01', type: 'OPTIONAL', description: 'Celebration of Gregorian New Year', isMandatory: false },
   { name: 'Makar Sankranti / Pongal', date: '2026-01-14', type: 'GAZETTED', description: 'Harvest festival across India', isMandatory: true },
   { name: 'Republic Day', date: '2026-01-26', type: 'NATIONAL', description: 'Constitution of India came into effect', isMandatory: true },
@@ -41,21 +41,13 @@ export async function GET(req: NextRequest) {
 
     const query: any = {
       organizationId: orgId,
-      year,
     };
-
-    let holidays = await Holiday.find(query).sort({ date: 1 });
-
-    // Auto-seed default holidays if none exist for this organization in 2026/2025
-    if (holidays.length === 0 && (year === 2026 || year === 2025)) {
-      const seedData = DEFAULT_INDIAN_HOLIDAYS_2026.map((h) => ({
-        ...h,
-        organizationId: orgId,
-        year,
-      }));
-      await Holiday.insertMany(seedData);
-      holidays = await Holiday.find(query).sort({ date: 1 });
+    if (yearParam) {
+      query.year = year;
     }
+
+    // Return strictly only dynamically registered holidays for this organization
+    const holidays = await Holiday.find(query).sort({ date: 1 });
 
     return NextResponse.json({ success: true, holidays });
   } catch (error: any) {
@@ -72,19 +64,39 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Role check: Only Admins and Managers can add holidays
-    const allowedRoles = ['SUPER_ADMIN', 'ORG_ADMIN', 'HR_ADMIN', 'MANAGER'];
-    if (!allowedRoles.includes(session.role)) {
-      return NextResponse.json({ success: false, error: 'Permission denied' }, { status: 403 });
+    const orgId = await resolveOrganizationId(session);
+    const body = await req.json();
+
+    // Action: Optional explicit import of standard Indian holidays
+    if (body.action === 'IMPORT_INDIAN_GAZETTED') {
+      const year = Number(body.year) || new Date().getFullYear();
+      const existing = await Holiday.find({ organizationId: orgId, year });
+      const existingNames = new Set(existing.map((h) => h.name.toLowerCase()));
+
+      const toInsert = DEFAULT_INDIAN_HOLIDAYS_2026.filter(
+        (h) => !existingNames.has(h.name.toLowerCase())
+      ).map((h) => ({
+        ...h,
+        organizationId: orgId,
+        year,
+      }));
+
+      if (toInsert.length > 0) {
+        await Holiday.insertMany(toInsert);
+      }
+
+      const updated = await Holiday.find({ organizationId: orgId, year }).sort({ date: 1 });
+      return NextResponse.json({
+        success: true,
+        message: `Imported ${toInsert.length} holidays for ${year}.`,
+        holidays: updated,
+      });
     }
 
-    const orgId = await resolveOrganizationId(session);
-
-    const body = await req.json();
     const { name, date, type, description, isMandatory } = body;
 
     if (!name || !date) {
-      return NextResponse.json({ success: false, error: 'Name and date are required' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Holiday name and date are required' }, { status: 400 });
     }
 
     const year = parseInt(date.split('-')[0], 10) || new Date().getFullYear();
@@ -106,6 +118,30 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     console.error('Create holiday error:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    await connectToDatabase();
+    const session = getSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const orgId = await resolveOrganizationId(session);
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'Holiday ID is required' }, { status: 400 });
+    }
+
+    await Holiday.findOneAndDelete({ _id: id, organizationId: orgId });
+
+    return NextResponse.json({ success: true, message: 'Holiday deleted successfully' });
+  } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

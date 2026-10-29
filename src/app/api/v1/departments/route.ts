@@ -17,26 +17,11 @@ export async function GET(req: NextRequest) {
 
     const orgId = await resolveOrganizationId(session);
 
-    // Auto-seed default departments if none exist for this tenant
-    let departments = await Department.find({ organizationId: orgId })
+    // Fetch only dynamically created departments belonging strictly to this tenant
+    const departments = await Department.find({ organizationId: orgId })
       .populate('parentDepartmentId', 'name code')
       .populate('headEmployeeId', 'firstName lastName employeeCode email')
       .sort({ name: 1 });
-
-    if (departments.length === 0) {
-      const defaultDepts = [
-        { organizationId: orgId, name: 'Engineering', code: 'ENG', costCenterCode: 'CC-ENG-01', description: 'Core software engineering, architecture and QA' },
-        { organizationId: orgId, name: 'Product & Design', code: 'PROD', costCenterCode: 'CC-PROD-01', description: 'Product management, UX/UI and customer research' },
-        { organizationId: orgId, name: 'Human Resources', code: 'HR', costCenterCode: 'CC-HR-01', description: 'Talent acquisition, employee experience and payroll' },
-        { organizationId: orgId, name: 'Finance & Operations', code: 'FIN', costCenterCode: 'CC-FIN-01', description: 'Financial planning, accounting and resource costing' },
-        { organizationId: orgId, name: 'Sales & Delivery', code: 'SALES', costCenterCode: 'CC-SALES-01', description: 'Client deliveries, accounts and business development' },
-      ];
-      await Department.insertMany(defaultDepts);
-      departments = await Department.find({ organizationId: orgId })
-        .populate('parentDepartmentId', 'name code')
-        .populate('headEmployeeId', 'firstName lastName employeeCode email')
-        .sort({ name: 1 });
-    }
 
     // Compute live headcount and team count for each department strictly within tenant
     const deptStats = await Promise.all(
@@ -87,7 +72,7 @@ export async function POST(req: NextRequest) {
       code: deptCode,
     });
     if (existing) {
-      return NextResponse.json({ success: false, error: `Department code "${deptCode}" is already in use.` }, { status: 409 });
+      return NextResponse.json({ success: false, error: `Department code "${deptCode}" is already in use in this organization.` }, { status: 409 });
     }
 
     const newDepartment = await Department.create({

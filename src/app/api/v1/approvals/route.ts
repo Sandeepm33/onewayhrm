@@ -19,121 +19,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Organization context required' }, { status: 400 });
     }
 
-    // Auto-seed default enterprise MNC approval workflows if none exist
-    let workflows = await ApprovalWorkflow.find({ organizationId: orgId });
-    if (workflows.length === 0) {
-      const defaultWorkflows = [
-        {
-          organizationId: orgId,
-          module: 'LEAVE',
-          name: 'Standard Leave Approval Workflow',
-          description: 'Step 1: Direct HR Reporting Manager -> Step 2: HR Manager validation',
-          isActive: true,
-          steps: [
-            { stepNumber: 1, stepName: 'Reporting Manager Review', approverType: 'REPORTING_MANAGER' },
-            { stepNumber: 2, stepName: 'HR Administration Verification', approverType: 'ROLE', roleSlug: 'hr-manager' },
-          ],
-        },
-        {
-          organizationId: orgId,
-          module: 'TIMESHEET',
-          name: 'Client Project Timesheet Dual-Approval',
-          description: 'Step 1: Technical Lead task review -> Step 2: Project Manager billing signoff',
-          isActive: true,
-          steps: [
-            { stepNumber: 1, stepName: 'Technical Lead Verification', approverType: 'TECHNICAL_LEAD' },
-            { stepNumber: 2, stepName: 'Project Manager Billing Signoff', approverType: 'ROLE', roleSlug: 'project-manager' },
-          ],
-        },
-        {
-          organizationId: orgId,
-          module: 'ATTENDANCE_REGULARIZATION',
-          name: 'Biometric Clock Regularization Flow',
-          description: 'Step 1: Direct Line Manager review -> Step 2: HR Attendance Policy validation',
-          isActive: true,
-          steps: [
-            { stepNumber: 1, stepName: 'Line Manager Review', approverType: 'REPORTING_MANAGER' },
-            { stepNumber: 2, stepName: 'HR Attendance Compliance', approverType: 'ROLE', roleSlug: 'hr-manager' },
-          ],
-        },
-        {
-          organizationId: orgId,
-          module: 'EXPENSE_CLAIM',
-          name: 'Corporate Expense Reimbursement Flow',
-          description: 'Step 1: Manager expense verification -> Step 2: Finance Controller disbursement',
-          isActive: true,
-          steps: [
-            { stepNumber: 1, stepName: 'Manager Pre-Approval', approverType: 'REPORTING_MANAGER' },
-            { stepNumber: 2, stepName: 'Finance Audit & Payment', approverType: 'ROLE', roleSlug: 'finance-controller' },
-          ],
-        },
-        {
-          organizationId: orgId,
-          module: 'BUDGET_REVISION',
-          name: 'Project Budget Revision Workflow',
-          description: 'Step 1: Engineering Manager / PM -> Step 2: Finance Controller approval',
-          isActive: true,
-          steps: [
-            { stepNumber: 1, stepName: 'Department Head Justification', approverType: 'DEPARTMENT_HEAD' },
-            { stepNumber: 2, stepName: 'Finance Budget Authorization', approverType: 'ROLE', roleSlug: 'finance-controller' },
-          ],
-        },
-      ];
+    // Fetch strictly dynamic workflows registered for this organization
+    let workflows = await ApprovalWorkflow.find({ organizationId: orgId }).sort({ createdAt: 1 });
 
-      await ApprovalWorkflow.insertMany(defaultWorkflows);
-      workflows = await ApprovalWorkflow.find({ organizationId: orgId });
-    }
-
-    // Fetch approval requests
-    let requests = await ApprovalRequest.find({ organizationId: orgId })
+    // Fetch strictly dynamic approval requests submitted in this organization
+    const requests = await ApprovalRequest.find({ organizationId: orgId })
       .populate('requesterEmployeeId', 'firstName lastName employeeCode email')
       .sort({ createdAt: -1 });
-
-    // If no approval requests exist, generate a couple realistic pending enterprise demo requests so the user can experience the approval engine
-    if (requests.length === 0) {
-      const emps = await Employee.find({ organizationId: orgId }).limit(3);
-      if (emps.length > 0) {
-        const emp1 = emps[0];
-        const emp2 = emps[1] || emps[0];
-
-        await ApprovalRequest.create([
-          {
-            organizationId: orgId,
-            module: 'LEAVE',
-            entityId: 'LV-SAMPLE-01',
-            requestNumber: 'REQ-LV-001',
-            requesterEmployeeId: emp1._id,
-            title: `Casual Leave Request (2 Days) - ${emp1.firstName} ${emp1.lastName}`,
-            summary: 'Family emergency / personal commitment',
-            details: { leaveType: 'Casual Leave', days: 2, from: '2026-11-02', to: '2026-11-03' },
-            currentStepIndex: 0,
-            totalSteps: 2,
-            currentPendingRole: 'Reporting Manager',
-            status: 'PENDING',
-            stepHistory: [],
-          },
-          {
-            organizationId: orgId,
-            module: 'TIMESHEET',
-            entityId: 'TS-SAMPLE-01',
-            requestNumber: 'REQ-TS-002',
-            requesterEmployeeId: emp2._id,
-            title: `Weekly Client Timesheet (40.0 hrs) - ${emp2.firstName} ${emp2.lastName}`,
-            summary: 'Client Project Alpha (32 hrs) + Technical Architecture Review (8 hrs)',
-            details: { totalHours: 40, billableHours: 32, period: 'Week 43, 2026' },
-            currentStepIndex: 0,
-            totalSteps: 2,
-            currentPendingRole: 'Technical Lead',
-            status: 'PENDING',
-            stepHistory: [],
-          },
-        ]);
-
-        requests = await ApprovalRequest.find({ organizationId: orgId })
-          .populate('requesterEmployeeId', 'firstName lastName employeeCode email')
-          .sort({ createdAt: -1 });
-      }
-    }
 
     return NextResponse.json({
       success: true,

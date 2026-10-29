@@ -21,15 +21,15 @@ const LeaveBalanceSchema = new Schema<ILeaveBalance>(
     employeeId: { type: Schema.Types.ObjectId, ref: 'Employee', required: true, index: true },
     year: { type: Number, required: true },
     casualLeave: {
-      total: { type: Number, default: 12 },
+      total: { type: Number, default: 0 },
       used: { type: Number, default: 0 },
     },
     sickLeave: {
-      total: { type: Number, default: 12 },
+      total: { type: Number, default: 0 },
       used: { type: Number, default: 0 },
     },
     earnedLeave: {
-      total: { type: Number, default: 15 },
+      total: { type: Number, default: 0 },
       used: { type: Number, default: 0 },
     },
     unpaidLeave: {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest, hashPassword } from '@/lib/auth';
 import { Organization } from '@/models/Organization';
@@ -7,6 +8,7 @@ import { User } from '@/models/User';
 import { Role } from '@/models/Role';
 import { Employee } from '@/models/Employee';
 import { AuditLog } from '@/models/Operations';
+import { sendTenantProvisionedEmail, sendTemporaryPasswordWelcomeEmail } from '@/lib/email';
 
 export async function GET(req: NextRequest) {
   try {
@@ -109,10 +111,13 @@ export async function POST(req: NextRequest) {
       ],
     });
 
-    // 3. Create Tenant Admin User
+    // 3. Create Tenant Admin User with Temporary Password & Forced Reset Flag
     let adminUser = null;
-    if (adminName && adminPassword) {
-      const passwordHash = await hashPassword(adminPassword);
+    const finalPassword = adminPassword || ('Temp@' + Math.floor(100000 + Math.random() * 900000));
+    const resetToken = crypto.randomBytes(32).toString('hex');
+
+    if (adminName) {
+      const passwordHash = await hashPassword(finalPassword);
       adminUser = await User.create({
         organizationId: org._id,
         name: adminName.trim(),
@@ -121,7 +126,21 @@ export async function POST(req: NextRequest) {
         role: 'Organization Admin',
         roleId: ownerRole._id,
         isActive: true,
+        mustChangePassword: true,
+        resetPasswordToken: resetToken,
+        resetPasswordExpires: new Date(Date.now() + 86400000 * 3), // 3 days validity
       });
+
+      // Send Welcome / Temporary Password Email via SMTP
+      sendTenantProvisionedEmail({
+        to: contactEmail.toLowerCase().trim(),
+        adminName: adminName.trim(),
+        organizationName: org.name,
+        organizationSlug: org.slug,
+        temporaryPassword: finalPassword,
+        plan: org.plan,
+        resetToken,
+      }).catch((err) => console.error('[Tenant Provisioning Email Error]:', err));
     }
 
     await AuditLog.create({
@@ -135,9 +154,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Organization "${org.name}" provisioned successfully by Platform Owner.`,
+      message: `Organization "${org.name}" provisioned successfully by Platform Owner. Credentials dispatched via email.`,
       organization: org,
-      adminUser: adminUser ? { name: adminUser.name, email: adminUser.email } : null,
+      adminUser: adminUser ? { name: adminUser.name, email: adminUser.email, temporaryPassword: finalPassword } : null,
     });
   } catch (error: any) {
     console.error('Create tenant error:', error);
@@ -153,7 +172,40 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 403 });
     }
 
-    const { organizationId, plan, planStatus, employeeLimit } = await req.json();
+    const { organizationId, plan, planStatus, employeeLimit, action, newPassword } = await req.json();
+
+    // Reset admin password action
+    if (action === 'RESET_ADMIN_PASSWORD' && organizationId) {
+      const org = await Organization.findById(organizationId);
+      if (!org) return NextResponse.json({ success: false, error: 'Organization not found' }, { status: 404 });
+
+      const adminUser = await User.findOne({ organizationId, role: { $in: ['Organization Admin', 'Organization Owner', 'ORG_ADMIN'] } });
+      if (!adminUser) return NextResponse.json({ success: false, error: 'Admin user not found' }, { status: 404 });
+
+      const tempPass = newPassword || ('Temp@' + Math.floor(100000 + Math.random() * 900000));
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      adminUser.passwordHash = await hashPassword(tempPass);
+      adminUser.mustChangePassword = true;
+      adminUser.resetPasswordToken = resetToken;
+      adminUser.resetPasswordExpires = new Date(Date.now() + 86400000 * 3);
+      await adminUser.save();
+
+      // Dispatch temporary password email
+      sendTemporaryPasswordWelcomeEmail({
+        to: adminUser.email,
+        name: adminUser.name,
+        temporaryPassword: tempPass,
+        organizationName: org.name,
+        roleName: 'Organization Admin',
+        resetToken,
+      }).catch((err) => console.error('[Reset Admin Email Error]:', err));
+
+      return NextResponse.json({
+        success: true,
+        message: `Admin password for "${org.name}" reset to temporary password and emailed to ${adminUser.email}.`,
+        temporaryPassword: tempPass,
+      });
+    }
 
     const updates: any = {};
     if (plan) updates.plan = plan;

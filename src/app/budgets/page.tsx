@@ -60,7 +60,7 @@ interface IRevision {
   createdAt: string;
 }
 
-export default function BudgetsPage() {
+function BudgetsContent() {
   const { user, hasPermission } = useAuth();
   const canCreate = hasPermission('budgets', 'create');
   const canEdit = hasPermission('budgets', 'edit');
@@ -89,8 +89,8 @@ export default function BudgetsPage() {
     projectId: '',
     costCenterCode: '',
     financialYear: '2026-2027',
-    startDate: new Date().toISOString().split('T')[0],
-    endDate: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    startDate: '',
+    endDate: '',
     approvedAmount: 3000000,
     committedExpenseCost: 450000,
     actualSpent: 0,
@@ -123,6 +123,9 @@ export default function BudgetsPage() {
 
   useEffect(() => {
     fetchData();
+    const today = new Date().toISOString().split('T')[0];
+    const end = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    setFormData((f) => ({ ...f, startDate: today, endDate: end }));
   }, []);
 
   const handleCreateBudget = async (e: React.FormEvent) => {
@@ -873,5 +876,20 @@ export default function BudgetsPage() {
         </div>
       )}
     </DashboardLayout>
+  );
+}
+
+export default function BudgetsPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center text-slate-400 text-xs">
+          <div className="w-8 h-8 border-3 border-orange-600 border-t-transparent rounded-full animate-spin mb-3" />
+          <span>Loading Budgets Console...</span>
+        </div>
+      }
+    >
+      <BudgetsContent />
+    </React.Suspense>
   );
 }

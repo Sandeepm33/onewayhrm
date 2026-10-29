@@ -24,40 +24,13 @@ export async function GET(req: NextRequest) {
     }
 
     const orgId = await resolveOrganizationId(session);
-    let [organization, branches, departments, designations, auditLogs] = await Promise.all([
+    const [organization, branches, departments, designations, auditLogs] = await Promise.all([
       Organization.findById(orgId),
       Branch.find({ organizationId: orgId }),
       Department.find({ organizationId: orgId }),
       Designation.find({ organizationId: orgId }),
       AuditLog.find({ organizationId: orgId }).sort({ createdAt: -1 }).limit(25),
     ]);
-
-    // Auto-seed default MNC departments if none exist for this tenant
-    if (departments.length === 0) {
-      const defaultDepts = [
-        { organizationId: orgId, name: 'Engineering', code: 'ENG', description: 'Software engineering, QA and cloud infrastructure' },
-        { organizationId: orgId, name: 'Product & Design', code: 'PROD', description: 'Product management, UX and technical architecture' },
-        { organizationId: orgId, name: 'Human Resources', code: 'HR', description: 'Talent acquisition, employee lifecycle and payroll' },
-        { organizationId: orgId, name: 'Finance & Operations', code: 'FIN', description: 'Budgets, financial controllership and resource allocations' },
-        { organizationId: orgId, name: 'Sales & Delivery', code: 'SALES', description: 'Client deliveries, project management and business growth' },
-      ];
-      await Department.insertMany(defaultDepts);
-      departments = await Department.find({ organizationId: orgId });
-    }
-
-    // Auto-seed default MNC designations if none exist for this tenant
-    if (designations.length === 0) {
-      const defaultDesigs = [
-        { organizationId: orgId, title: 'Engineering Manager', code: 'ENG-MGR', grade: 'L5' },
-        { organizationId: orgId, title: 'Technical Lead', code: 'TECH-LEAD', grade: 'L4' },
-        { organizationId: orgId, title: 'Senior Software Engineer', code: 'SR-DEV', grade: 'L3' },
-        { organizationId: orgId, title: 'Software Engineer', code: 'DEV', grade: 'L2' },
-        { organizationId: orgId, title: 'QA Automation Engineer', code: 'QA-ENG', grade: 'L2' },
-        { organizationId: orgId, title: 'HR Manager', code: 'HR-MGR', grade: 'L4' },
-      ];
-      await Designation.insertMany(defaultDesigs);
-      designations = await Designation.find({ organizationId: orgId });
-    }
 
     return NextResponse.json({
       success: true,

@@ -10,7 +10,13 @@ import { HelpdeskTicket, AuditLog } from '@/models/Operations';
 import { Organization } from '@/models/Organization';
 import { ApprovalRequest } from '@/models/ApprovalWorkflow';
 import { Holiday } from '@/models/Holiday';
-import { resolveOrganizationId, resolveEmployeeForSession } from '@/lib/tenant';
+import { resolveOrganizationId } from '@/lib/tenant';
+
+function getOrdinalSuffix(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return s[(v - 20) % 10] || s[v] || s[0];
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -24,29 +30,10 @@ export async function GET(req: NextRequest) {
     const todayStr = new Date().toISOString().split('T')[0];
     const orgId = await resolveOrganizationId(session);
 
-    // Default Announcements
-    const announcements = [
-      {
-        id: 'ann-1',
-        title: 'Q3 All-Hands Town Hall & Festive Bonus Notice',
-        summary: 'Join us this Friday at 4:30 PM IST for quarterly company milestones and festival celebration details.',
-        category: 'COMPANY_UPDATE',
-        date: '28 Oct 2026',
-        author: 'People & Culture Team',
-        pinned: true,
-      },
-      {
-        id: 'ann-2',
-        title: 'Annual Comprehensive Health Insurance Card Refresh',
-        summary: 'Updated cashless hospitalization insurance cards have been issued to all employee profile document repositories.',
-        category: 'POLICY_UPDATE',
-        date: '25 Oct 2026',
-        author: 'HR Operations',
-        pinned: false,
-      },
-    ];
+    const todayStart = new Date(todayStr + 'T00:00:00.000Z');
+    const todayEnd = new Date(todayStr + 'T23:59:59.999Z');
 
-    // Parallel fetch core metrics for orgId
+    // Parallel fetch core metrics for orgId (strictly dynamic from database)
     const [
       totalEmployees,
       activeEmployees,
@@ -60,7 +47,8 @@ export async function GET(req: NextRequest) {
       recentAuditLogs,
       pendingApprovals,
       dbHolidays,
-      employeesList,
+      orgEmployees,
+      leavesToday,
     ] = await Promise.all([
       orgId ? Employee.countDocuments({ organizationId: orgId }) : Employee.countDocuments(),
       orgId ? Employee.countDocuments({ organizationId: orgId, status: 'ACTIVE' }) : Employee.countDocuments({ status: 'ACTIVE' }),
@@ -85,18 +73,34 @@ export async function GET(req: NextRequest) {
         ? Holiday.find({ organizationId: orgId, date: { $gte: todayStr } }).sort({ date: 1 }).limit(5)
         : Holiday.find({ date: { $gte: todayStr } }).sort({ date: 1 }).limit(5),
       orgId
-        ? Employee.find({ organizationId: orgId }).select('firstName lastName employeeCode email joiningDate departmentId').limit(10)
-        : Employee.find().select('firstName lastName employeeCode email joiningDate departmentId').limit(10),
+        ? Employee.find({ organizationId: orgId, status: { $in: ['ACTIVE', 'PROBATION'] } })
+            .populate('designationId', 'title')
+            .select('firstName lastName employeeCode email dateOfBirth joiningDate designationId')
+        : Employee.find({ status: { $in: ['ACTIVE', 'PROBATION'] } })
+            .populate('designationId', 'title')
+            .select('firstName lastName employeeCode email dateOfBirth joiningDate designationId'),
+      orgId
+        ? LeaveRequest.find({
+            organizationId: orgId,
+            status: 'APPROVED',
+            startDate: { $lte: todayEnd },
+            endDate: { $gte: todayStart },
+          }).populate('employeeId', 'firstName lastName employeeCode')
+        : LeaveRequest.find({
+            status: 'APPROVED',
+            startDate: { $lte: todayEnd },
+            endDate: { $gte: todayStart },
+          }).populate('employeeId', 'firstName lastName employeeCode'),
     ]);
 
     const presentToday = todayAttendances.filter((a) => a.status === 'PRESENT' || a.status === 'LATE').length;
     const lateToday = todayAttendances.filter((a) => a.status === 'LATE').length;
     const onLeaveToday = todayAttendances.filter((a) => a.status === 'ON_LEAVE').length;
     const effectiveTotal = Math.max(totalEmployees, 1);
-    const absentToday = Math.max(0, effectiveTotal - presentToday - onLeaveToday);
+    const absentToday = totalEmployees > 0 ? Math.max(0, totalEmployees - presentToday - onLeaveToday) : 0;
 
-    // Holidays fallback if none seeded
-    let upcomingHolidays = dbHolidays.map((h) => ({
+    // Upcoming Holidays: Strictly dynamic from DB
+    const upcomingHolidays = dbHolidays.map((h) => ({
       _id: h._id,
       name: h.name,
       date: h.date,
@@ -104,58 +108,96 @@ export async function GET(req: NextRequest) {
       daysAway: Math.ceil((new Date(h.date).getTime() - new Date(todayStr).getTime()) / (1000 * 60 * 60 * 24)),
     }));
 
-    if (upcomingHolidays.length === 0) {
-      upcomingHolidays = [
-        { _id: 'h-1', name: 'Diwali (Deepavali)', date: '2026-11-01', type: 'GAZETTED', daysAway: 4 },
-        { _id: 'h-2', name: 'Govardhan Puja', date: '2026-11-02', type: 'RESTRICTED', daysAway: 5 },
-        { _id: 'h-3', name: 'Guru Nanak Jayanti', date: '2026-11-24', type: 'GAZETTED', daysAway: 27 },
-        { _id: 'h-4', name: 'Christmas Day', date: '2026-12-25', type: 'GAZETTED', daysAway: 58 },
-      ] as any;
+    // Dynamic Celebrations (Birthdays, Work Anniversaries, New Joiners)
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentDay = now.getDate();
+    const currentYear = now.getFullYear();
+    const celebrations: any[] = [];
+
+    for (const emp of orgEmployees) {
+      const designationTitle = (emp.designationId as any)?.title || 'Team Member';
+      const fullName = `${emp.firstName} ${emp.lastName}`;
+
+      // Check Birthday
+      if (emp.dateOfBirth) {
+        const dob = new Date(emp.dateOfBirth);
+        const bMonth = dob.getMonth();
+        const bDay = dob.getDate();
+
+        // Calculate days away in current calendar year
+        const targetBirthdayThisYear = new Date(currentYear, bMonth, bDay);
+        const diffTime = targetBirthdayThisYear.getTime() - new Date(currentYear, currentMonth, currentDay).getTime();
+        const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
+
+        if (diffDays >= 0 && diffDays <= 7) {
+          celebrations.push({
+            id: String(emp._id),
+            name: fullName,
+            email: emp.email,
+            type: 'BIRTHDAY',
+            title: 'Birthday Celebration',
+            date: diffDays === 0 ? 'Today 🎂' : diffDays === 1 ? 'Tomorrow' : `In ${diffDays} days`,
+            badge: '🎂 Birthday',
+            role: designationTitle,
+          });
+        }
+      }
+
+      // Check Work Anniversary
+      if (emp.joiningDate) {
+        const jDate = new Date(emp.joiningDate);
+        const jMonth = jDate.getMonth();
+        const jDay = jDate.getDate();
+        const jYear = jDate.getFullYear();
+        const years = currentYear - jYear;
+
+        if (years > 0) {
+          const targetAnniversary = new Date(currentYear, jMonth, jDay);
+          const diffTime = targetAnniversary.getTime() - new Date(currentYear, currentMonth, currentDay).getTime();
+          const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
+
+          if (diffDays >= 0 && diffDays <= 7) {
+            celebrations.push({
+              id: String(emp._id),
+              name: fullName,
+              email: emp.email,
+              type: 'WORK_ANNIVERSARY',
+              title: `${years}${getOrdinalSuffix(years)} Work Anniversary`,
+              date: diffDays === 0 ? 'Today 🎉' : diffDays === 1 ? 'Tomorrow' : `In ${diffDays} days`,
+              badge: `🎉 ${years} Years`,
+              role: designationTitle,
+            });
+          }
+        } else {
+          // New joiner in past 14 days
+          const daysSinceJoining = Math.round((now.getTime() - jDate.getTime()) / (1000 * 3600 * 24));
+          if (daysSinceJoining >= 0 && daysSinceJoining <= 14) {
+            celebrations.push({
+              id: String(emp._id),
+              name: fullName,
+              email: emp.email,
+              type: 'NEW_JOINER',
+              title: 'New Member Welcome',
+              date: daysSinceJoining === 0 ? 'Joined Today 🌟' : `Joined ${daysSinceJoining}d ago`,
+              badge: '🌟 New Joiner',
+              role: designationTitle,
+            });
+          }
+        }
+      }
     }
 
-    // Celebrations (HROne signature)
-    const celebrations = [
-      {
-        id: 'cel-1',
-        name: employeesList[0] ? `${employeesList[0].firstName} ${employeesList[0].lastName}` : 'Aarav Sharma',
-        type: 'WORK_ANNIVERSARY',
-        title: '2nd Work Anniversary',
-        date: 'Today',
-        badge: '🎉 2 Years',
-        role: 'Senior Software Engineer',
-      },
-      {
-        id: 'cel-2',
-        name: employeesList[1] ? `${employeesList[1].firstName} ${employeesList[1].lastName}` : 'Ananya Rao',
-        type: 'BIRTHDAY',
-        title: 'Birthday Celebration',
-        date: 'Tomorrow, 29 Oct',
-        badge: '🎂 Birthday',
-        role: 'Product Designer',
-      },
-      {
-        id: 'cel-3',
-        name: employeesList[2] ? `${employeesList[2].firstName} ${employeesList[2].lastName}` : 'Vikram Malhotra',
-        type: 'NEW_JOINER',
-        title: 'New Member Welcome',
-        date: 'Joined this week',
-        badge: '🌟 New Joiner',
-        role: 'DevOps Specialist',
-      },
-    ];
-
-    // Who is on leave today
-    const whoIsOnLeaveToday = [
-      {
-        id: 'ol-1',
-        name: employeesList[3] ? `${employeesList[3].firstName} ${employeesList[3].lastName}` : 'Rohit Deshmukh',
-        code: employeesList[3]?.employeeCode || 'EMP004',
-        leaveType: 'Casual Leave',
-        duration: '1 Day (Full)',
-        status: 'Approved',
-        avatarBg: 'bg-amber-100 text-amber-800',
-      },
-    ];
+    // Dynamic Who is on leave today
+    const whoIsOnLeaveToday = leavesToday.map((l: any) => ({
+      id: String(l._id),
+      name: l.employeeId ? `${l.employeeId.firstName} ${l.employeeId.lastName}` : 'Employee',
+      code: l.employeeId?.employeeCode || 'EMP',
+      leaveType: l.leaveType || 'Approved Leave',
+      duration: l.duration ? `${l.duration} Days` : '1 Day',
+      status: 'Approved',
+      avatarBg: 'bg-purple-100 text-purple-700',
+    }));
 
     // Super Admin platform metrics (if applicable)
     let superAdminMetrics = null;
@@ -172,41 +214,48 @@ export async function GET(req: NextRequest) {
         trialTenants,
         totalEmployeesPlatform,
         systemHealth: '100% OPERATIONAL',
-        databaseEngine: 'MongoDB Atlas (Cluster0)',
+        databaseEngine: 'MongoDB Atlas',
       };
     }
 
-    // Attendance breakdown percentages
-    const attendanceStats = {
-      presentPercentage: Math.round((presentToday / effectiveTotal) * 100) || 80,
-      latePercentage: Math.round((lateToday / effectiveTotal) * 100) || 10,
-      onLeavePercentage: Math.round((onLeaveToday / effectiveTotal) * 100) || 5,
-      absentPercentage: Math.round((absentToday / effectiveTotal) * 100) || 5,
-      avgClockIn: '09:28 AM',
-      onTimeRate: '94.2%',
+    // Attendance breakdown percentages (only computed if employees exist)
+    const attendanceStats = totalEmployees > 0 ? {
+      presentPercentage: Math.round((presentToday / totalEmployees) * 100),
+      latePercentage: Math.round((lateToday / totalEmployees) * 100),
+      onLeavePercentage: Math.round((onLeaveToday / totalEmployees) * 100),
+      absentPercentage: Math.round((absentToday / totalEmployees) * 100),
+      avgClockIn: '09:30 AM',
+      onTimeRate: `${Math.round(((presentToday - lateToday) / Math.max(presentToday, 1)) * 100)}%`,
+    } : {
+      presentPercentage: 0,
+      latePercentage: 0,
+      onLeavePercentage: 0,
+      absentPercentage: 0,
+      avgClockIn: '—',
+      onTimeRate: '0%',
     };
 
     return NextResponse.json({
       success: true,
       role: session.role,
       metrics: {
-        totalEmployees: totalEmployees || 4,
-        activeEmployees: activeEmployees || 4,
+        totalEmployees: totalEmployees || 0,
+        activeEmployees: activeEmployees || 0,
         probationEmployees: probationEmployees || 0,
-        presentToday: presentToday || 4,
+        presentToday: presentToday || 0,
         lateToday: lateToday || 0,
         onLeaveToday: onLeaveToday || 0,
-        absentToday,
-        pendingLeavesCount: pendingLeavesCount || 1,
-        openJobsCount: openJobsCount || 2,
-        totalCandidatesCount: totalCandidatesCount || 3,
-        openTicketsCount: openTicketsCount || 1,
-        latestPayroll: latestPayroll || {
-          title: 'October 2026 Regular Cycle',
-          totalNetPay: 457600,
-          totalGrossPay: 515000,
-          status: 'APPROVED',
-        },
+        absentToday: absentToday || 0,
+        pendingLeavesCount: pendingLeavesCount || 0,
+        openJobsCount: openJobsCount || 0,
+        totalCandidatesCount: totalCandidatesCount || 0,
+        openTicketsCount: openTicketsCount || 0,
+        latestPayroll: latestPayroll ? {
+          title: `${latestPayroll.month || ''} ${latestPayroll.year || ''} Regular Cycle`.trim(),
+          totalNetPay: latestPayroll.totalNetPay || 0,
+          totalGrossPay: latestPayroll.totalGrossPay || 0,
+          status: latestPayroll.status || 'DRAFT',
+        } : null,
       },
       attendanceStats,
       superAdminMetrics,
@@ -214,7 +263,7 @@ export async function GET(req: NextRequest) {
       upcomingHolidays,
       celebrations,
       whoIsOnLeaveToday,
-      announcements,
+      announcements: [],
       recentAuditLogs,
     });
   } catch (error: any) {

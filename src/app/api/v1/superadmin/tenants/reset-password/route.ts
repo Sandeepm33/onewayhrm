@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest, hashPassword } from '@/lib/auth';
 import { Organization } from '@/models/Organization';
 import { User } from '@/models/User';
 import { AuditLog } from '@/models/Operations';
+import { sendTemporaryPasswordWelcomeEmail } from '@/lib/email';
 
 export async function POST(req: NextRequest) {
   try {
@@ -33,7 +35,7 @@ export async function POST(req: NextRequest) {
     // Find the primary admin user for this organization
     const adminUser = await User.findOne({
       organizationId: org._id,
-      $or: [{ role: 'Organization Admin' }, { role: 'ORG_ADMIN' }, { email: org.contactEmail }],
+      $or: [{ role: 'Organization Admin' }, { role: 'Organization Owner' }, { role: 'ORG_ADMIN' }, { email: org.contactEmail }],
     });
 
     if (!adminUser) {
@@ -44,9 +46,24 @@ export async function POST(req: NextRequest) {
     }
 
     const passwordHash = await hashPassword(newPassword);
+    const resetToken = crypto.randomBytes(32).toString('hex');
+
     adminUser.passwordHash = passwordHash;
     adminUser.isActive = true;
+    adminUser.mustChangePassword = true;
+    adminUser.resetPasswordToken = resetToken;
+    adminUser.resetPasswordExpires = new Date(Date.now() + 86400000 * 3); // 3 days validity
     await adminUser.save();
+
+    // Dispatch temporary password email via SMTP
+    sendTemporaryPasswordWelcomeEmail({
+      to: adminUser.email,
+      name: adminUser.name,
+      temporaryPassword: newPassword,
+      organizationName: org.name,
+      roleName: 'Organization Admin',
+      resetToken,
+    }).catch((err) => console.error('[Tenant Password Reset Email Error]:', err));
 
     await AuditLog.create({
       userId: session.userId as any,
@@ -59,7 +76,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Password for "${adminUser.name}" (${adminUser.email}) reset successfully.`,
+      message: `Password for "${adminUser.name}" (${adminUser.email}) reset to temporary password and emailed successfully.`,
       email: adminUser.email,
       organizationName: org.name,
     });

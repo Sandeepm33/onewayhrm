@@ -28,6 +28,7 @@ export interface User {
   employeeId?: string;
   phone?: string;
   canCustomizeSaas?: boolean;
+  mustChangePassword?: boolean;
 }
 
 export interface OrgFeature {
@@ -175,6 +176,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setOrganization(data.organization);
         setEmployee(data.employee);
         await fetchSession();
+        if (data.mustChangePassword) {
+          return { success: true, mustChangePassword: true } as any;
+        }
         return true;
       }
       return false;

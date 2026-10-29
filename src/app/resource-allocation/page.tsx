@@ -59,7 +59,7 @@ interface IUtilization {
   }[];
 }
 
-export default function ResourceAllocationPage() {
+function ResourceAllocationContent() {
   const { user, hasPermission } = useAuth();
   const canCreate = hasPermission('resource-allocation', 'create');
   const canDelete = hasPermission('resource-allocation', 'delete');
@@ -85,7 +85,7 @@ export default function ResourceAllocationPage() {
     expectedHoursPerWeek: 20,
     billableRatePerHour: 1500,
     costRatePerHour: 800,
-    startDate: new Date().toISOString().split('T')[0],
+    startDate: '',
     endDate: '',
     notes: '',
   });
@@ -110,6 +110,7 @@ export default function ResourceAllocationPage() {
 
   useEffect(() => {
     fetchData();
+    setFormData((f) => ({ ...f, startDate: new Date().toISOString().split('T')[0] }));
   }, []);
 
   const handleAllocate = async (e: React.FormEvent) => {
@@ -695,5 +696,20 @@ export default function ResourceAllocationPage() {
         </div>
       )}
     </DashboardLayout>
+  );
+}
+
+export default function ResourceAllocationPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center text-slate-400 text-xs">
+          <div className="w-8 h-8 border-3 border-teal-600 border-t-transparent rounded-full animate-spin mb-3" />
+          <span>Loading Resource Allocation...</span>
+        </div>
+      }
+    >
+      <ResourceAllocationContent />
+    </React.Suspense>
   );
 }

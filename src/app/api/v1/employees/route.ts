@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getSessionFromRequest, hashPassword } from '@/lib/auth';
 import { Employee } from '@/models/Employee';
 import { User } from '@/models/User';
 import { Role } from '@/models/Role';
+import { Organization } from '@/models/Organization';
 import { LeaveBalance } from '@/models/Leave';
 import { AuditLog } from '@/models/Operations';
 import { ReportingRelationship } from '@/models/Workforce';
+import { sendTemporaryPasswordWelcomeEmail } from '@/lib/email';
 
 import { resolveOrganizationId } from '@/lib/tenant';
 import { checkSessionPermission } from '@/lib/permissions';
@@ -212,8 +215,14 @@ export async function POST(req: NextRequest) {
 
     // Optionally create user portal login
     if (createPortalAccount) {
-      const pwdHash = await hashPassword(password || 'Welcome@123');
+      const tempPass = password || 'Welcome@' + Math.floor(100 + Math.random() * 900);
+      const pwdHash = await hashPassword(tempPass);
+      const resetToken = crypto.randomBytes(32).toString('hex');
       const existingUser = await User.findOne({ email: cleanEmail });
+
+      const orgDoc = await Organization.findById(orgId);
+      const orgName = orgDoc?.name || 'Your Organization';
+
       if (existingUser) {
         existingUser.organizationId = orgId as any;
         existingUser.employeeId = newEmployee._id as any;
@@ -222,10 +231,23 @@ export async function POST(req: NextRequest) {
           existingUser.role = roleDoc.name;
           existingUser.roleId = roleDoc._id as any;
         }
+        existingUser.passwordHash = pwdHash;
+        existingUser.mustChangePassword = true;
+        existingUser.resetPasswordToken = resetToken;
+        existingUser.resetPasswordExpires = new Date(Date.now() + 86400000 * 3);
         existingUser.isActive = true;
         await existingUser.save();
         newEmployee.userId = existingUser._id as any;
         await newEmployee.save();
+
+        sendTemporaryPasswordWelcomeEmail({
+          to: cleanEmail,
+          name: `${firstName} ${lastName}`,
+          temporaryPassword: tempPass,
+          organizationName: orgName,
+          roleName: roleDoc ? roleDoc.name : 'Employee',
+          resetToken,
+        }).catch((err) => console.error('[Employee Welcome Email Error]:', err));
       } else {
         const newUser = await User.create({
           organizationId: orgId,
@@ -236,9 +258,21 @@ export async function POST(req: NextRequest) {
           role: roleDoc ? roleDoc.name : 'EMPLOYEE',
           roleId: roleDoc ? roleDoc._id : undefined,
           isActive: true,
+          mustChangePassword: true,
+          resetPasswordToken: resetToken,
+          resetPasswordExpires: new Date(Date.now() + 86400000 * 3),
         });
         newEmployee.userId = newUser._id;
         await newEmployee.save();
+
+        sendTemporaryPasswordWelcomeEmail({
+          to: cleanEmail,
+          name: `${firstName} ${lastName}`,
+          temporaryPassword: tempPass,
+          organizationName: orgName,
+          roleName: roleDoc ? roleDoc.name : 'Employee',
+          resetToken,
+        }).catch((err) => console.error('[Employee Welcome Email Error]:', err));
       }
     }
 

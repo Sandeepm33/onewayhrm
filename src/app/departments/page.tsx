@@ -407,6 +407,27 @@ export default function DepartmentsPage() {
             <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
             Loading organizational departments...
           </div>
+        ) : filteredDepartments.length === 0 ? (
+          <div className="p-12 text-center bg-white rounded-3xl border border-dashed border-slate-200">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
+              <Building2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900">No Departments Found</h3>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-4">
+              {search || parentFilter
+                ? 'No departments match your filter criteria.'
+                : 'Your organization does not have any departments configured yet. Get started by adding your first business unit.'}
+            </p>
+            {canCreate && !search && !parentFilter && (
+              <button
+                onClick={handleOpenCreate}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/20 inline-flex items-center gap-1.5 cursor-pointer transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Department</span>
+              </button>
+            )}
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredDepartments.map((dept) => {
